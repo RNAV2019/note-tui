@@ -18,6 +18,8 @@ nix build          # builds ./result/bin/note
 nix develop        # drops you into a shell with go, typst, and tinymist
 ```
 
+The dev shell intentionally omits `hx` and `helium` — install those through your regular profile (they're editor/browser choices, not build dependencies).
+
 Add `result/bin` to your `PATH`, or copy `result/bin/note` to `~/.local/bin`.
 
 ## Commands
@@ -88,4 +90,4 @@ This requires `tinymist` and (optionally) `typstyle` on your `PATH`. Both are av
 git -C ~/Documents/notes remote add origin <url>
 ```
 
-After that, `note backup` commits all changes and pushes, and `note sync` pulls the latest commits. Conflicts are left for you to resolve with standard git tooling.
+After that, `note backup` commits all changes and pushes, and `note sync` pulls the latest commits with `git pull --rebase`. Conflicts are left for you to resolve with standard git tooling.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -19,6 +20,11 @@ func ParseStaticURL(s string) (string, bool) {
 	m := staticURLRe.FindStringSubmatch(s)
 	if m == nil {
 		return "", false
+	}
+	// tinymist logs a bare host:port today; tolerate a full URL if a
+	// future version starts logging one.
+	if strings.HasPrefix(m[1], "http://") || strings.HasPrefix(m[1], "https://") {
+		return m[1], true
 	}
 	return "http://" + m[1], true
 }
