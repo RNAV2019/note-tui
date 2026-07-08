@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func defaults() Config {
 func Load() (Config, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return defaults(), nil
+		return Config{}, fmt.Errorf("cannot determine home directory: %w", err)
 	}
 	return LoadFrom(filepath.Join(home, ".config", "note", "config.toml"))
 }
