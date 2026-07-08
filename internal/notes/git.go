@@ -16,9 +16,12 @@ func (s *Store) git(args ...string) (string, error) {
 	return string(out), nil
 }
 
-func (s *Store) hasRemote() bool {
+func (s *Store) hasRemote() (bool, error) {
 	out, err := s.git("remote")
-	return err == nil && strings.TrimSpace(out) != ""
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
 }
 
 // Backup stages everything, commits (skipping cleanly if nothing changed),
@@ -36,7 +39,11 @@ func (s *Store) Backup(message string) (pushed bool, err error) {
 			return false, err
 		}
 	}
-	if !s.hasRemote() {
+	remote, err := s.hasRemote()
+	if err != nil {
+		return false, err
+	}
+	if !remote {
 		return false, nil
 	}
 	if _, err := s.git("push"); err != nil {
@@ -46,9 +53,13 @@ func (s *Store) Backup(message string) (pushed bool, err error) {
 }
 
 func (s *Store) Sync() error {
-	if !s.hasRemote() {
+	remote, err := s.hasRemote()
+	if err != nil {
+		return err
+	}
+	if !remote {
 		return fmt.Errorf("no git remote configured in %s — add one with: git -C %s remote add origin <url>", s.Root, s.Root)
 	}
-	_, err := s.git("pull", "--rebase")
+	_, err = s.git("pull", "--rebase")
 	return err
 }

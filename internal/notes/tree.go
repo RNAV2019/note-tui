@@ -93,11 +93,14 @@ func (s *Store) CreateTag(notebook, name string) error {
 	if err != nil {
 		return err
 	}
+	if _, err := os.Stat(filepath.Join(s.Root, notebook)); err != nil {
+		return fmt.Errorf("notebook %q not found", notebook)
+	}
 	dir := filepath.Join(s.Root, notebook, slug)
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("tag %q already exists in %q", slug, notebook)
 	}
-	return os.MkdirAll(dir, 0o755)
+	return os.Mkdir(dir, 0o755)
 }
 
 func (s *Store) DeleteNotebook(notebook string) error {

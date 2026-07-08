@@ -128,4 +128,21 @@ func TestInvalidNames(t *testing.T) {
 	if err := s.CreateNotebook("!!!"); err == nil {
 		t.Error("unsluggable notebook name should error")
 	}
+	s.CreateNotebook("uni")
+	if err := s.CreateTag("uni", "!!!"); err == nil {
+		t.Error("unsluggable tag name should error")
+	}
+	if _, err := s.CreateNote("uni", "algos", "!!!"); err == nil {
+		t.Error("unsluggable note name should error")
+	}
+}
+
+func TestCreateTagRequiresNotebook(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.CreateTag("nonexistent", "algos"); err == nil {
+		t.Error("tag in missing notebook should error, not create phantom notebook")
+	}
+	if nbs, _ := s.Notebooks(); len(nbs) != 0 {
+		t.Errorf("phantom notebook created: %v", nbs)
+	}
 }
