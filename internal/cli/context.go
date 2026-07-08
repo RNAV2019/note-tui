@@ -5,6 +5,7 @@ import (
 
 	"github.com/RNAV2019/note/internal/config"
 	"github.com/RNAV2019/note/internal/notes"
+	"github.com/RNAV2019/note/internal/session"
 	"github.com/RNAV2019/note/internal/ui"
 )
 
@@ -53,3 +54,36 @@ func runPicker(title string, items []string) (string, bool, error) {
 }
 
 func notesSlug(name string) string { return notes.Slugify(name) }
+
+const newTagSentinel = "+ new tag…"
+
+// pickTag chooses a tag in a notebook, offering inline creation.
+func pickTag(store *notes.Store, notebook string) (string, bool, error) {
+	tags, err := store.Tags(notebook)
+	if err != nil {
+		return "", false, err
+	}
+	items := append(tags, newTagSentinel)
+	choice, ok, err := runSelect("Which tag (module)?", items)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	if choice != newTagSentinel {
+		return choice, true, nil
+	}
+	name, ok, err := ui.RunPrompt("New tag name", "e.g. algorithms")
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	if err := store.CreateTag(notebook, name); err != nil {
+		return "", false, err
+	}
+	return notes.Slugify(name), true, nil
+}
+
+// openNote launches the editor + live preview session for a file.
+func openNote(cfg config.Config, path string) error {
+	return session.Open(path, cfg.Editor, cfg.Preview, func(msg string) {
+		fmt.Println(ui.Fail(msg))
+	})
+}
