@@ -12,7 +12,9 @@ import (
 
 var staticURLRe = regexp.MustCompile(`Static file server listening on: (\S+)`)
 
-// ParseStaticURL extracts the preview URL from tinymist log output.
+// ParseStaticURL extracts the preview URL from tinymist log output,
+// which may be a single line or a multi-line blob; the first
+// "Static file server listening on:" match wins.
 func ParseStaticURL(s string) (string, bool) {
 	m := staticURLRe.FindStringSubmatch(s)
 	if m == nil {
@@ -74,6 +76,8 @@ func (p *Preview) Stop() {
 	}
 }
 
+// killGroup terminates cmd's whole process group.
+// cmd must have been started with Setpgid: true.
 func killGroup(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return

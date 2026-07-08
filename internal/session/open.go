@@ -33,6 +33,9 @@ func Open(file, editor, previewTemplate string, warn func(string)) error {
 	ed := exec.Command(editor, file)
 	ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
 	edErr := ed.Run()
+	if edErr != nil {
+		edErr = fmt.Errorf("editor %q: %w", editor, edErr)
+	}
 
 	preview.Stop()
 	if browser != nil && browser.Process != nil {
