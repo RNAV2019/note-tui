@@ -62,13 +62,14 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	var cmd tea.Cmd
+	prev := m.input.Value()
 	// textinput.Model.Update returns (Model, tea.Cmd) in bubbles v2
 	m.input, cmd = m.input.Update(msg)
-	next := FilterItems(m.input.Value(), m.items)
-	if len(next) != len(m.filtered) {
+	// Results are score-ranked, so any query change invalidates the cursor.
+	if m.input.Value() != prev {
 		m.cursor = 0
 	}
-	m.filtered = next
+	m.filtered = FilterItems(m.input.Value(), m.items)
 	if m.cursor >= len(m.filtered) {
 		m.cursor = 0
 	}
