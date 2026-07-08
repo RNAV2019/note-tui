@@ -14,7 +14,7 @@
           pname = "note";
           version = "0.1.0";
           src = ./.;
-          vendorHash = null; # replace: build once, copy the hash nix reports
+          vendorHash = "sha256-M5jZk99qhft+MauB1DFOgdP863/zHIvQ7CtU5DdKnbM=";
           subPackages = [ "cmd/note" ];
         };
 
