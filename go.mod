@@ -1,4 +1,4 @@
-module github.com/RNAV2019/note
+module github.com/RNAV2019/note-tui
 
 go 1.26.2
 

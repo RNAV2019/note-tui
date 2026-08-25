@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/RNAV2019/note/internal/config"
-	"github.com/RNAV2019/note/internal/notes"
-	"github.com/RNAV2019/note/internal/session"
+	"github.com/RNAV2019/note-tui/internal/config"
+	"github.com/RNAV2019/note-tui/internal/notes"
+	"github.com/RNAV2019/note-tui/internal/session"
 )
 
 type pane int

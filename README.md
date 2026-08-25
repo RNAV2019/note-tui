@@ -1,29 +1,22 @@
-# note
+# note-tui
 
-`note` is a keyboard-driven TUI for managing Typst lecture notes. Notes are stored as `.typ` files under `~/Documents/notes/<notebook>/<tag>/<name>.typ`, so the tree on disk is exactly what you see in the interface: notebooks group tags, tags group notes, and a note's tag *is* its parent directory.
+`note-tui` is a keyboard-driven TUI for managing Typst lecture notes; it installs as the `note` command. Notes are stored as `.typ` files under `~/Documents/notes/<notebook>/<tag>/<name>.typ`, so the tree on disk is exactly what you see in the interface: notebooks group tags, tags group notes, and a note's tag *is* its parent directory.
 
 When you create or open a note, `note` hands the terminal to your editor (Helix by default) alongside a live Typst preview served by Helix's own tinymist language server and displayed in a Helium app-mode window — so you write in your terminal and the rendered document updates as you type beside it. Quit the editor and you land back in the TUI. See [Helix setup](#helix-setup), which the preview depends on.
 
 ```
 ╭─ note 0.2.0 ───────────────────────────────────────────────────────╮
-│                      │                                             │
-│    ╭──────────╮      │  year-1 / cs118                             │
-│    │ ▔▔▔▔▔▔▔▔ │      │  ─────────────────────────────────────────  │
-│    │ ▔▔▔▔▔▔   │      │  ❯ b-trees                          2d ago  │
-│    │ ▔▔▔▔▔▔▔▔ │      │    hash-tables                      5d ago  │
-│    ╰──────────╯      │    dijkstra                         1w ago  │
-│         note         │                                             │
-│                      │                                             │
-│  Notebooks           │                                             │
-│  ❯ year-1        12  │                                             │
-│    year-2         4  │                                             │
-│                      │                                             │
-│  Tags                │                                             │
-│    all           12  │                                             │
-│  ❯ cs118          3  │                                             │
-│    cs126          9  │                                             │
+│  Notebooks             │                                           │
+│  ❯ year-1          12  │  year-1 / cs118                           │
+│    year-2           4  │  ───────────────────────────────────────  │
+│                        │  ❯ b-trees                        2d ago  │
+│  Tags                  │    dijkstra                       1w ago  │
+│    all             12  │    hash-tables                    5d ago  │
+│  ❯ cs118            3  │                                           │
+│    cs126            9  │                                           │
+│                        │                                           │
 ╰────────────────────────────────────────────────────────────────────╯
-  n new · r rename · d delete · m move · / search · tab pane · ? keys
+  n new · r rename · d delete · m move · / search · tab pane · ? keys · q quit
 ```
 
 ## Requirements

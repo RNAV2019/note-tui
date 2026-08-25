@@ -5,8 +5,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/RNAV2019/note/internal/config"
-	"github.com/RNAV2019/note/internal/notes"
+	"github.com/RNAV2019/note-tui/internal/config"
+	"github.com/RNAV2019/note-tui/internal/notes"
 )
 
 // newTestModel builds a model over a temp note tree:

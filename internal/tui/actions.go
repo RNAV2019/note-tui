@@ -8,7 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/RNAV2019/note/internal/notes"
+	"github.com/RNAV2019/note-tui/internal/notes"
 )
 
 type actionKind int

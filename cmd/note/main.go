@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/RNAV2019/note/internal/config"
-	"github.com/RNAV2019/note/internal/notes"
-	"github.com/RNAV2019/note/internal/tui"
+	"github.com/RNAV2019/note-tui/internal/config"
+	"github.com/RNAV2019/note-tui/internal/notes"
+	"github.com/RNAV2019/note-tui/internal/tui"
 )
 
 // version is injected at build time with -X main.version=...

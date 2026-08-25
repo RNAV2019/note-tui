@@ -1,5 +1,5 @@
 {
-  description = "note — Typst lecture notes TUI with live preview";
+  description = "note-tui — Typst lecture notes TUI with live preview";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -16,7 +16,7 @@
       version = "0.2.0";
     in {
       packages.default = pkgs.buildGoModule {
-        pname = "note";
+        pname = "note-tui";
         inherit version;
         src = ./.;
         vendorHash = "sha256-qZ43J6cJQRMEQFHj4fZA5wsGYDC7vWIHfly1VZ/gVJ8=";
