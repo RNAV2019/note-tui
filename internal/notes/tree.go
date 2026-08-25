@@ -19,6 +19,7 @@ type Note struct {
 	Tag      string
 	Name     string
 	Path     string
+	ModTime  time.Time
 }
 
 func (n Note) Display() string {
@@ -155,11 +156,18 @@ func (s *Store) AllNotes() ([]Note, error) {
 					continue
 				}
 				name := strings.TrimSuffix(e.Name(), ".typ")
+				// A note that vanishes mid-walk is skipped rather than
+				// failing the whole listing.
+				info, err := e.Info()
+				if err != nil {
+					continue
+				}
 				out = append(out, Note{
 					Notebook: nb,
 					Tag:      tag,
 					Name:     name,
 					Path:     filepath.Join(s.Root, nb, tag, e.Name()),
+					ModTime:  info.ModTime(),
 				})
 			}
 		}
@@ -167,17 +175,74 @@ func (s *Store) AllNotes() ([]Note, error) {
 	return out, nil
 }
 
-// NoteCount counts notes in a notebook, or in one tag if tag != "".
-func (s *Store) NoteCount(notebook, tag string) (int, error) {
-	all, err := s.AllNotes()
+// RenameNote renames a note within its current notebook and tag.
+func (s *Store) RenameNote(n Note, newName string) (Note, error) {
+	slug, err := slugOrErr("note", newName)
 	if err != nil {
-		return 0, err
+		return n, err
 	}
-	n := 0
-	for _, note := range all {
-		if note.Notebook == notebook && (tag == "" || note.Tag == tag) {
-			n++
-		}
+	if slug == n.Name {
+		return n, nil
 	}
+	dest := filepath.Join(s.Root, n.Notebook, n.Tag, slug+".typ")
+	if _, err := os.Stat(dest); err == nil {
+		return n, fmt.Errorf("note %q already exists in %s/%s", slug, n.Notebook, n.Tag)
+	}
+	if err := os.Rename(n.Path, dest); err != nil {
+		return n, err
+	}
+	n.Name, n.Path = slug, dest
 	return n, nil
+}
+
+// MoveNote moves a note to another notebook and tag, keeping its name.
+// Since a tag is a directory, this is also how a note is retagged.
+func (s *Store) MoveNote(n Note, notebook, tag string) (Note, error) {
+	if notebook == n.Notebook && tag == n.Tag {
+		return n, nil
+	}
+	dir := filepath.Join(s.Root, notebook, tag)
+	if _, err := os.Stat(dir); err != nil {
+		return n, fmt.Errorf("tag %q not found in notebook %q", tag, notebook)
+	}
+	dest := filepath.Join(dir, n.Name+".typ")
+	if _, err := os.Stat(dest); err == nil {
+		return n, fmt.Errorf("note %q already exists in %s/%s", n.Name, notebook, tag)
+	}
+	if err := os.Rename(n.Path, dest); err != nil {
+		return n, err
+	}
+	n.Notebook, n.Tag, n.Path = notebook, tag, dest
+	return n, nil
+}
+
+// RenameNotebook renames a notebook directory and returns its new slug.
+func (s *Store) RenameNotebook(old, newName string) (string, error) {
+	return s.renameDir("notebook", s.Root, old, newName)
+}
+
+// RenameTag renames a tag directory within a notebook and returns its new slug.
+func (s *Store) RenameTag(notebook, old, newName string) (string, error) {
+	return s.renameDir("tag", filepath.Join(s.Root, notebook), old, newName)
+}
+
+func (s *Store) renameDir(kind, parent, old, newName string) (string, error) {
+	slug, err := slugOrErr(kind, newName)
+	if err != nil {
+		return old, err
+	}
+	if slug == old {
+		return old, nil
+	}
+	if _, err := os.Stat(filepath.Join(parent, old)); err != nil {
+		return old, fmt.Errorf("%s %q not found", kind, old)
+	}
+	dest := filepath.Join(parent, slug)
+	if _, err := os.Stat(dest); err == nil {
+		return old, fmt.Errorf("%s %q already exists", kind, slug)
+	}
+	if err := os.Rename(filepath.Join(parent, old), dest); err != nil {
+		return old, err
+	}
+	return slug, nil
 }

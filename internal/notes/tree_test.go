@@ -100,7 +100,7 @@ func TestCreateAndListNotes(t *testing.T) {
 	}
 }
 
-func TestNoteCountAndDeleteNote(t *testing.T) {
+func TestDeleteNote(t *testing.T) {
 	s := newTestStore(t)
 	s.CreateNotebook("uni")
 	s.CreateTag("uni", "algos")
@@ -108,18 +108,169 @@ func TestNoteCountAndDeleteNote(t *testing.T) {
 	s.CreateNote("uni", "algos", "one")
 	s.CreateNote("uni", "algos", "two")
 	s.CreateNote("uni", "networks", "three")
-	if n, _ := s.NoteCount("uni", ""); n != 3 {
-		t.Errorf("notebook count = %d", n)
-	}
-	if n, _ := s.NoteCount("uni", "algos"); n != 2 {
-		t.Errorf("tag count = %d", n)
-	}
 	all, _ := s.AllNotes()
+	if len(all) != 3 {
+		t.Fatalf("AllNotes() = %d notes, want 3", len(all))
+	}
 	if err := s.DeleteNote(all[0]); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := s.NoteCount("uni", ""); n != 2 {
-		t.Error("note not deleted")
+	if all, _ := s.AllNotes(); len(all) != 2 {
+		t.Errorf("after delete = %d notes, want 2", len(all))
+	}
+}
+
+func TestAllNotesPopulatesModTime(t *testing.T) {
+	s := newTestStore(t)
+	s.CreateNotebook("uni")
+	s.CreateTag("uni", "algos")
+	s.CreateNote("uni", "algos", "one")
+	all, _ := s.AllNotes()
+	if all[0].ModTime.IsZero() {
+		t.Error("ModTime not populated")
+	}
+}
+
+// seedNote returns a store with uni/algos/b-trees.typ plus an empty uni/networks.
+func seedNote(t *testing.T) (*Store, Note) {
+	t.Helper()
+	s := newTestStore(t)
+	s.CreateNotebook("uni")
+	s.CreateTag("uni", "algos")
+	s.CreateTag("uni", "networks")
+	if _, err := s.CreateNote("uni", "algos", "B-Trees"); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := s.AllNotes()
+	return s, all[0]
+}
+
+func TestRenameNote(t *testing.T) {
+	tests := []struct {
+		name    string
+		newName string
+		want    string
+		wantErr bool
+	}{
+		{"slugifies", "Hash Tables", "hash-tables", false},
+		{"same name is a no-op", "b-trees", "b-trees", false},
+		{"unsluggable name", "!!!", "b-trees", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, n := seedNote(t)
+			got, err := s.RenameNote(n, tt.newName)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got.Name != tt.want {
+				t.Errorf("Name = %q, want %q", got.Name, tt.want)
+			}
+			if _, err := os.Stat(got.Path); err != nil {
+				t.Errorf("returned Path does not exist: %v", err)
+			}
+		})
+	}
+}
+
+func TestRenameNoteRejectsCollision(t *testing.T) {
+	s, n := seedNote(t)
+	s.CreateNote("uni", "algos", "hash-tables")
+	if _, err := s.RenameNote(n, "hash-tables"); err == nil {
+		t.Fatal("rename onto existing note should error")
+	}
+	if _, err := os.Stat(n.Path); err != nil {
+		t.Error("original note lost after failed rename")
+	}
+}
+
+func TestMoveNote(t *testing.T) {
+	s, n := seedNote(t)
+	s.CreateNotebook("scratch")
+	s.CreateTag("scratch", "misc")
+
+	// Retag within the same notebook.
+	moved, err := s.MoveNote(n, "uni", "networks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Tag != "networks" {
+		t.Errorf("Tag = %q, want networks", moved.Tag)
+	}
+	if _, err := os.Stat(n.Path); !os.IsNotExist(err) {
+		t.Error("note left behind at old path")
+	}
+
+	// Across notebooks.
+	moved, err = s.MoveNote(moved, "scratch", "misc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Notebook != "scratch" || moved.Tag != "misc" {
+		t.Errorf("moved = %+v", moved)
+	}
+	if _, err := os.Stat(moved.Path); err != nil {
+		t.Errorf("moved note missing: %v", err)
+	}
+}
+
+func TestMoveNoteErrors(t *testing.T) {
+	s, n := seedNote(t)
+	if _, err := s.MoveNote(n, "uni", "nonexistent"); err == nil {
+		t.Error("move to missing tag should error")
+	}
+	s.CreateNote("uni", "networks", "b-trees")
+	if _, err := s.MoveNote(n, "uni", "networks"); err == nil {
+		t.Error("move onto existing note should error")
+	}
+	if _, err := os.Stat(n.Path); err != nil {
+		t.Error("original note lost after failed move")
+	}
+}
+
+func TestRenameNotebookAndTag(t *testing.T) {
+	s, _ := seedNote(t)
+
+	slug, err := s.RenameTag("uni", "algos", "Data Structures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slug != "data-structures" {
+		t.Fatalf("tag slug = %q", slug)
+	}
+
+	slug, err = s.RenameNotebook("uni", "Year 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slug != "year-1" {
+		t.Fatalf("notebook slug = %q", slug)
+	}
+
+	// The note must have travelled with both directories.
+	all, _ := s.AllNotes()
+	if len(all) != 1 {
+		t.Fatalf("AllNotes() = %v", all)
+	}
+	if got := all[0].Display(); got != "year-1/data-structures/b-trees" {
+		t.Errorf("Display() = %q", got)
+	}
+}
+
+func TestRenameDirErrors(t *testing.T) {
+	s, _ := seedNote(t)
+	if _, err := s.RenameNotebook("uni", "!!!"); err == nil {
+		t.Error("unsluggable notebook rename should error")
+	}
+	if _, err := s.RenameNotebook("nonexistent", "other"); err == nil {
+		t.Error("renaming a missing notebook should error")
+	}
+	s.CreateNotebook("scratch")
+	if _, err := s.RenameNotebook("uni", "scratch"); err == nil {
+		t.Error("rename onto existing notebook should error")
+	}
+	if _, err := s.RenameTag("uni", "algos", "networks"); err == nil {
+		t.Error("rename onto existing tag should error")
 	}
 }
 

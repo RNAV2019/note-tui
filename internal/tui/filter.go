@@ -1,6 +1,10 @@
-package ui
+package tui
 
-import "github.com/sahilm/fuzzy"
+import (
+	"strings"
+
+	"github.com/sahilm/fuzzy"
+)
 
 type Match struct {
 	Value          string
@@ -23,4 +27,24 @@ func FilterItems(query string, items []string) []Match {
 		out[i] = Match{Value: r.Str, MatchedIndexes: r.MatchedIndexes}
 	}
 	return out
+}
+
+// highlight underlines the characters of a match that the query hit.
+func highlight(m Match) string {
+	if len(m.MatchedIndexes) == 0 {
+		return m.Value
+	}
+	idx := make(map[int]bool, len(m.MatchedIndexes))
+	for _, i := range m.MatchedIndexes {
+		idx[i] = true
+	}
+	var b strings.Builder
+	for i, r := range m.Value {
+		if idx[i] {
+			b.WriteString(matchStyle.Render(string(r)))
+		} else {
+			b.WriteString(string(r))
+		}
+	}
+	return b.String()
 }
