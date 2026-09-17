@@ -13,7 +13,7 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
-      version = "0.2.0";
+      version = "0.3.0";
     in {
       packages.default = pkgs.buildGoModule {
         pname = "note-tui";
