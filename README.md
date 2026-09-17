@@ -1,23 +1,94 @@
 # note-tui
 
-`note-tui` is a keyboard-driven TUI for managing Typst lecture notes; it installs as the `note` command. Notes are stored as `.typ` files under `~/Documents/notes/<notebook>/<tag>/<name>.typ`, so the tree on disk is exactly what you see in the interface: notebooks group tags, tags group notes, and a note's tag *is* its parent directory.
+A keyboard-driven TUI for Typst lecture notes. It installs as the `note` command.
 
-When you create or open a note, `note` hands the terminal to your editor (Helix by default) alongside a live Typst preview served by Helix's own tinymist language server and displayed in a Helium app-mode window — so you write in your terminal and the rendered document updates as you type beside it. Quit the editor and you land back in the TUI. See [Helix setup](#helix-setup), which the preview depends on.
+Notes are plain `.typ` files under `~/Documents/notes/<notebook>/<tag>/<name>.typ`, so the tree on disk is exactly what you see on screen: notebooks group tags, tags group notes, and a note's tag *is* its parent directory. Nothing in the interface is a database — renaming a tag renames a folder.
 
-```
-╭─ note 0.2.0 ───────────────────────────────────────────────────────╮
-│  Notebooks             │                                           │
-│  ❯ year-1          12  │  year-1 / cs118                           │
-│    year-2           4  │  ───────────────────────────────────────  │
-│                        │  ❯ b-trees                        2d ago  │
-│  Tags                  │    dijkstra                       1w ago  │
-│    all             12  │    hash-tables                    5d ago  │
-│  ❯ cs118            3  │                                           │
-│    cs126            9  │                                           │
-│                        │                                           │
-╰────────────────────────────────────────────────────────────────────╯
-  n new · r rename · d delete · m move · / search · tab pane · ? keys · q quit
-```
+![The three-pane view: notebooks, notes and a live preview of the selected file](docs/img/main.png)
+
+Open a note and `note` hands the terminal to your editor (Helix by default) with a live Typst preview beside it, served by Helix's own tinymist language server in a Helium app window. Quit the editor and you land back here. See [Helix setup](#helix-setup), which the preview depends on.
+
+## Contents
+
+- [The interface](#the-interface) · [Keys](#keys) · [Finding notes](#finding-notes) · [The space menu](#the-space-menu)
+- [Creating and changing notes](#creating-and-changing-notes) · [Small terminals](#small-terminals)
+- [Requirements](#requirements) · [Command line](#command-line) · [Configuration](#configuration) · [Template](#template)
+- [Helix setup](#helix-setup) · [Sync](#sync)
+
+## The interface
+
+The screen is one keyboard surface, borrowed in equal parts from Helix, Neovim and a tiling multiplexer:
+
+**Tab bar.** The notebook you are in, then its tags as numbered tabs — `1 all` plus one per tag, each with its note count. Press the number to jump, `[` and `]` to walk. When the tags outrun the width they collapse into a `+3 ›` marker rather than shrinking.
+
+**Notebooks.** The notebook list with a note count and a git mark each: `●` committed, `+` uncommitted changes, `✗` the last sync failed. The mark is a glyph, not just a colour. Underneath, a repo panel: branch, remote, how far ahead or behind you are, how many files have changed, and when you last fetched.
+
+**Notes.** Newest first, with the tag (in the `all` tab) and an age. The focused pane has an iris border and its selection is brighter; the unfocused pane keeps a dimmer bar so you never lose your place.
+
+**Preview.** The selected file: path, tag, modified time, size, then the source with line numbers and Typst-aware highlighting — headings, `$math$`, `#functions`, strings, comments.
+
+**Statusline.** A Helix-style mode pill (`NOR`, `SPC`, `FIND`, `INPUT`, `CONFIRM`, `KEYS`), a breadcrumb of where you are, then git state and your position in the list. Messages appear here and last until the next keypress.
+
+**Hint line.** The keys that work *right now*, changing with the mode. Hints are dropped whole when the terminal is narrow — never cut in half.
+
+## Keys
+
+Press `?` for the full list, generated from the same table the keys are bound from, so it cannot drift.
+
+![The keys screen, with a legend for the mode pills and git marks](docs/img/keys.png)
+
+| Key | Action |
+|---|---|
+| `j` `k` `↑` `↓` | Move in the focused pane |
+| `g` `G` | First / last |
+| `tab` `h` `l` | Switch between the notebooks and notes panes |
+| `[` `]` | Previous / next tag tab |
+| `1`–`9` | Jump straight to a tag tab |
+| `enter` | Focus the notes (from the sidebar), or open the note |
+| `n` | New — a notebook in the sidebar, a note in the list |
+| `r` `d` `m` | Rename, delete, move |
+| `/` | Find any note, anywhere |
+| `space` | The menu (below) |
+| `S` `B` | Sync (`git pull --rebase`) / backup (commit + push) |
+| `?` | All keys |
+| `q` `ctrl+c` | Quit |
+| `esc` | Close a popup — **never** quits |
+
+## Finding notes
+
+`/` searches every note in every notebook at once. Results are fuzzy-matched with the hit characters picked out, the best match sits directly above the prompt, and the preview follows the selection.
+
+![The finder: fuzzy results bottom-up with a preview of the highlighted note](docs/img/finder.png)
+
+From the finder, `enter` opens, and `ctrl+v` / `ctrl+r` / `ctrl+d` move, rename or delete the highlighted note without leaving the search.
+
+## The space menu
+
+`space` opens a which-key menu in the corner. It annotates the keyboard rather than taking over the screen, so the panes behind it stay readable — the only popup that doesn't dim what's underneath.
+
+![The space menu anchored bottom right, listing find, new, move, rename, delete, sync and backup](docs/img/space-menu.png)
+
+`space t` opens the tag submenu (`n` new, `r` rename, `d` delete), and `backspace` steps back to the root.
+
+## Creating and changing notes
+
+Creating a note asks only what it has to. With a tag tab active it goes straight to the title; only the ambiguous `all` tab stops to ask which tag, and then only when there is more than one. The prompt shows what the title will become on disk as you type, so the slugging is never a surprise.
+
+![The new-note prompt showing "Red-Black Trees" becoming red-black-trees.typ in year-1/cs126](docs/img/new-note.png)
+
+`enter` creates the file from your template and opens it. Renaming and moving are the same operations on disk as anywhere else in the tree — because a tag is a directory, `m` is how you retag a note after the fact.
+
+Deleting always asks, lists what goes with it, and reminds you that committed notes can be recovered from git. Only `y` deletes; `enter` deliberately does nothing.
+
+On a fresh install there is nothing to list, so the first screen tells you where things live and what to press:
+
+![The welcome screen with three numbered steps and the notes, template and remote paths](docs/img/welcome.png)
+
+## Small terminals
+
+The layout has three states and picks one from the width: three panes at 110 columns or more, notebooks and notes from 70, and the note list alone below that. Nothing wraps or overlaps; panes are dropped whole, and the hint line drops hints it can't fit.
+
+![The same tree at 80 columns: notebooks and notes, no preview](docs/img/narrow.png)
 
 ## Requirements
 
@@ -27,6 +98,8 @@ The following programs must be on your `PATH`:
 - [`tinymist`](https://github.com/Myriad-Dreamin/tinymist) — Typst language server and preview server
 - [`hx`](https://helix-editor.com/) — Helix editor
 - [`helium`](https://github.com/Alex-Shand/helium) — browser launcher used for the preview window
+
+A terminal with truecolor support and a font covering box-drawing characters (any Nerd Font will do).
 
 Alternatively, use the included Nix flake to get a reproducible environment:
 
@@ -47,29 +120,6 @@ There are only two invocations — everything else lives in the TUI.
 |---|---|
 | `note` | Open the TUI |
 | `note --version`, `note -v` | Print the version and exit |
-
-## Keys
-
-The interface has three panes — **Notebooks** and **Tags** in the sidebar, and the note list on the right. The sidebar acts as a filter: pick a notebook, then either a tag or the synthetic `all` row, and the note list follows.
-
-| Key | Action |
-|---|---|
-| `j` / `k`, `↑` / `↓` | Move within the focused pane |
-| `g` / `G` | Jump to the first / last item |
-| `tab` / `shift+tab`, `h` / `l` | Cycle panes |
-| `enter` | In the sidebar, focus the note list. In the note list, open the note |
-| `n` | New note, notebook or tag — whichever the focused pane holds |
-| `r` | Rename the selected item |
-| `d` | Delete the selected item (asks first, and tells you how many notes go with it) |
-| `m` | Move a note to another notebook or tag |
-| `/` | Fuzzy search every note, across all notebooks |
-| `S` / `B` | Git sync / backup |
-| `?` | Show all keys |
-| `q`, `esc` | Quit (`esc` closes an open dialog first) |
-
-Creating a note only asks what it has to: with a tag already selected it prompts for the title alone, and only the `all` view stops to ask which tag. The new note opens in your editor immediately.
-
-Renaming and moving are the same operation on disk as anywhere else in the tree — because a tag is a directory, `m` is how you retag a note after the fact. Names are slugified, so "Hash Tables" becomes `hash-tables.typ`.
 
 ## Configuration
 
@@ -141,10 +191,10 @@ If the preview server never appears, `note` says so in the status line and you s
 
 ## Sync
 
-`~/Documents/notes` is a git repository, initialised on first run. The `B` and `S` keys delegate to git. Set up a remote once:
+`~/Documents/notes` is a git repository, initialised on first run. `B` and `S` delegate to git, and the sidebar's repo panel shows the result without your having to leave the TUI. Set up a remote once:
 
 ```bash
 git -C ~/Documents/notes remote add origin <url>
 ```
 
-After that, `B` commits all changes and pushes, and `S` pulls the latest commits with `git pull --rebase`; the result appears in the status line. Without a remote, `B` still commits locally and says so. Conflicts are left for you to resolve with standard git tooling.
+After that, `B` commits all changes and pushes, and `S` pulls the latest commits with `git pull --rebase`. Without a remote, `B` still commits locally and says so. Conflicts are left for you to resolve with standard git tooling.
