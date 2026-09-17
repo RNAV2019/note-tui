@@ -1,106 +1,61 @@
 package tui
 
-import (
-	"strings"
-
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
-)
-
 const (
-	sidebarWidth = 24 // inner width of the sidebar column
-	// Below this total width the sidebar is dropped and only notes are shown.
+	sidebarWidth = 26
+	notesWidth   = 44
+	// Below previewMinWidth the preview is dropped; below sidebarMinWidth the
+	// sidebar goes too and only the note list is left.
+	previewMinWidth = 110
 	sidebarMinWidth = 70
 )
 
-// layout holds the geometry for one render. All fields are inner dimensions:
-// the frame border is already accounted for.
+// layout is the screen geometry for one render. Row 0 is the tab bar, the
+// last two rows are the statusline and the hint line, and the panes share
+// everything in between. A hidden pane has zero width.
 type layout struct {
-	Width, Height int // full terminal size
-	Sidebar       int // sidebar inner width; 0 when collapsed
-	Main          int // main pane inner width
-	Body          int // rows available inside the frame
+	width, height int
+	sidebar       rect
+	notes         rect
+	preview       rect
+	statusRow     int
+	hintRow       int
 }
 
 // computeLayout derives pane geometry from the terminal size. Pure, so the
 // arithmetic can be tested without a terminal.
 func computeLayout(width, height int) layout {
-	l := layout{Width: width, Height: height}
+	l := layout{width: width, height: height, statusRow: height - 2, hintRow: height - 1}
+	paneH := max(height-3, 0)
 
-	// Two rows for the frame's top and bottom, one for the footer hints.
-	l.Body = max(height-3, 1)
-
-	// Two columns for the frame's left and right edges.
-	inner := max(width-2, 1)
-	if width >= sidebarMinWidth {
-		l.Sidebar = sidebarWidth
-		l.Main = max(inner-sidebarWidth-1, 1) // -1 for the vertical rule
-	} else {
-		l.Main = inner
+	switch {
+	case width >= previewMinWidth:
+		l.sidebar = rect{0, 1, sidebarWidth, paneH}
+		l.notes = rect{sidebarWidth, 1, notesWidth, paneH}
+		l.preview = rect{sidebarWidth + notesWidth, 1, width - sidebarWidth - notesWidth, paneH}
+	case width >= sidebarMinWidth:
+		l.sidebar = rect{0, 1, sidebarWidth, paneH}
+		l.notes = rect{sidebarWidth, 1, width - sidebarWidth, paneH}
+	default:
+		l.notes = rect{0, 1, width, paneH}
 	}
-
 	return l
 }
 
-// listCapacity is how many sidebar rows remain for lists once the two section
-// headers (with their trailing blanks) are accounted for.
-func (l layout) listCapacity() int {
-	const used = 4 // "Notebooks" + blank + "Tags" headers and spacing
-	return max(l.Body-used, 1)
-}
+func (l layout) hasSidebar() bool { return l.sidebar.w > 0 }
+func (l layout) hasPreview() bool { return l.preview.w > 0 }
 
-// pad truncates or right-pads s to exactly width display cells, measuring
-// ANSI-aware so styled text lines up.
-func pad(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w > width {
-		return truncate(s, width)
+// window returns the visible slice bounds for a list of count items with the
+// cursor kept in view, showing at most capacity rows.
+func window(cursor, count, capacity int) (start, end int) {
+	if capacity <= 0 {
+		return 0, 0
 	}
-	return s + strings.Repeat(" ", width-w)
-}
-
-// truncate cuts s to width cells, ending in "…" when anything was removed.
-// ANSI-aware, so it is safe on already-styled text.
-func truncate(s string, width int) string {
-	if width <= 0 {
-		return ""
+	if capacity >= count {
+		return 0, count
 	}
-	return ansi.Truncate(s, width, "…")
-}
-
-// row renders "left" and "right" on one line of the given width, with right
-// flushed to the end and left truncated if the two would collide.
-func row(left, right string, width int) string {
-	rw := lipgloss.Width(right)
-	if rw >= width {
-		return pad(right, width)
+	start = max(cursor-capacity/2, 0)
+	if start+capacity > count {
+		start = count - capacity
 	}
-	left = truncate(left, width-rw-1)
-	gap := width - lipgloss.Width(left) - rw
-	return left + strings.Repeat(" ", gap) + right
-}
-
-// frame draws the rounded border with a title tab, as in the reference design.
-// body lines are padded to the inner width; extra lines are dropped.
-func frame(title string, body []string, width, height int) string {
-	inner := max(width-2, 1)
-
-	var b strings.Builder
-	// "╭─ " + title + " " + filler + "╮" must span width cells.
-	dashes := max(inner-3-lipgloss.Width(title), 0)
-	b.WriteString(frameStyle.Render("╭─ ") + titleStyle.Render(title) +
-		frameStyle.Render(" "+strings.Repeat("─", dashes)+"╮"))
-	b.WriteString("\n")
-
-	for i := 0; i < height; i++ {
-		line := ""
-		if i < len(body) {
-			line = body[i]
-		}
-		b.WriteString(frameStyle.Render("│") + pad(line, inner) + frameStyle.Render("│"))
-		b.WriteString("\n")
-	}
-
-	b.WriteString(frameStyle.Render("╰" + strings.Repeat("─", inner) + "╯"))
-	return b.String()
+	return start, start + capacity
 }

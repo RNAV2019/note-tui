@@ -1,13 +1,11 @@
 package tui
 
-import "strings"
-
-// binding is one action and the keys that trigger it. The footer hints and the
-// help overlay are both generated from these, so they can never drift apart.
+// binding is one action and the keys that trigger it. The help screen is
+// generated from these, so it can never drift from what the keys really do.
 type binding struct {
 	keys  []string
-	label string // short form for the footer
-	help  string // long form for the help overlay
+	label string // how the key is written in help, e.g. "j k ↑ ↓"
+	help  string
 }
 
 func (b binding) matches(key string) bool {
@@ -19,71 +17,111 @@ func (b binding) matches(key string) bool {
 	return false
 }
 
-// hint renders "j/k move" for the footer.
-func (b binding) hint() string {
-	return dimStyle.Render(strings.Join(b.keys, "/")) + " " + dimStyle.Render(b.label)
+func bind(label, help string, keys ...string) binding {
+	return binding{keys: keys, label: label, help: help}
 }
 
-type keymap struct {
-	up, down       binding
-	top, bottom    binding
-	nextPane       binding
-	prevPane       binding
-	enter          binding
-	newItem        binding
-	rename, delete binding
-	move           binding
-	search         binding
-	sync, backup   binding
-	help, quit     binding
+var keys = struct {
+	up, down, top, bottom      binding
+	pane, prevTag, nextTag     binding
+	jumpTag, enter             binding
+	newItem, rename, del, move binding
+	find, leader               binding
+	sync, backup, help, quit   binding
+	cancel                     binding
+
+	// inside pickers, prompts and the finder, where letters are text
+	pickUp, pickDown, accept, deleteWord binding
+	finderMove, finderRename, finderDel  binding
+}{
+	up:       bind("j k ↑ ↓", "up / down", "k", "up"),
+	down:     bind("", "", "j", "down"),
+	top:      bind("g G", "first / last", "g", "home"),
+	bottom:   bind("", "", "G", "end"),
+	pane:     bind("h l tab", "switch pane", "tab", "shift+tab", "h", "l", "left", "right"),
+	prevTag:  bind("[ ]", "prev / next tag", "["),
+	nextTag:  bind("", "", "]"),
+	jumpTag:  bind("1-9", "jump to tag", "1", "2", "3", "4", "5", "6", "7", "8", "9"),
+	enter:    bind("enter", "open note · focus list", "enter"),
+	newItem:  bind("n", "new (follows pane)", "n"),
+	rename:   bind("r", "rename", "r"),
+	del:      bind("d", "delete", "d"),
+	move:     bind("m", "move note", "m"),
+	find:     bind("/", "find any note", "/"),
+	leader:   bind("space", "menu", "space"),
+	sync:     bind("S", "sync (pull --rebase)", "S"),
+	backup:   bind("B", "backup (commit + push)", "B"),
+	help:     bind("?", "this screen", "?"),
+	quit:     bind("q ctrl+c", "quit", "q", "ctrl+c"),
+	cancel:   bind("esc", "close popup only", "esc"),
+	pickUp:   bind("↑ ↓", "select", "up", "ctrl+p"),
+	pickDown: bind("ctrl+n/p", "select", "down", "ctrl+n"),
+	accept:   bind("enter", "accept", "enter"),
+	// ctrl+w is handled by the text input itself; listed for help only.
+	deleteWord:   bind("ctrl+w", "delete word"),
+	finderMove:   bind("ctrl+v", "move highlighted", "ctrl+v"),
+	finderRename: bind("ctrl+r", "rename highlighted", "ctrl+r"),
+	finderDel:    bind("ctrl+d", "delete highlighted", "ctrl+d"),
 }
 
-var keys = keymap{
-	up:       binding{[]string{"k", "up", "ctrl+p"}, "up", "move up"},
-	down:     binding{[]string{"j", "down", "ctrl+n"}, "down", "move down"},
-	top:      binding{[]string{"g", "home"}, "top", "jump to first item"},
-	bottom:   binding{[]string{"G", "end"}, "bottom", "jump to last item"},
-	nextPane: binding{[]string{"tab", "l", "right"}, "pane", "focus the next pane"},
-	prevPane: binding{[]string{"shift+tab", "h", "left"}, "pane", "focus the previous pane"},
-	enter:    binding{[]string{"enter"}, "open", "open the note, or focus the note list"},
-	newItem:  binding{[]string{"n"}, "new", "new note, notebook or tag (follows the focused pane)"},
-	rename:   binding{[]string{"r"}, "rename", "rename the selected item"},
-	delete:   binding{[]string{"d"}, "delete", "delete the selected item"},
-	move:     binding{[]string{"m"}, "move", "move a note to another notebook or tag"},
-	search:   binding{[]string{"/"}, "search", "fuzzy search every note"},
-	sync:     binding{[]string{"S"}, "sync", "git pull --rebase the notes repo"},
-	backup:   binding{[]string{"B"}, "backup", "commit and push the notes repo"},
-	help:     binding{[]string{"?"}, "keys", "toggle this help"},
-	quit:     binding{[]string{"q", "ctrl+c"}, "quit", "quit"},
+// leaderItem is one row of the space menu.
+type leaderItem struct {
+	key, label, hint string
 }
 
-// footer renders the one-line hint bar under the frame for the focused pane.
-func footer(p pane) string {
-	hints := []binding{keys.newItem, keys.rename, keys.delete}
-	if p == paneNotes {
-		hints = append(hints, keys.move)
-	}
-	hints = append(hints, keys.search, keys.nextPane, keys.help, keys.quit)
-
-	parts := make([]string, len(hints))
-	for i, h := range hints {
-		// Only the first key of each binding earns footer space.
-		parts[i] = dimStyle.Render(h.keys[0] + " " + h.label)
-	}
-	return "  " + strings.Join(parts, dimStyle.Render(" · "))
+var leaderRoot = []leaderItem{
+	{"f", "find note", "/"},
+	{"n", "new note", "n"},
+	{"N", "new notebook", ""},
+	{"t", "tag", "›"},
+	{"", "", ""},
+	{"m", "move note", "m"},
+	{"r", "rename", "r"},
+	{"d", "delete", "d"},
+	{"", "", ""},
+	{"s", "sync", "git pull"},
+	{"b", "backup", "commit + push"},
+	{"?", "all keys", "?"},
 }
 
-// helpLines renders the full keymap for the help overlay.
-func helpLines() []string {
-	all := []binding{
-		keys.up, keys.down, keys.top, keys.bottom,
-		keys.nextPane, keys.prevPane, keys.enter,
-		keys.newItem, keys.rename, keys.delete, keys.move,
-		keys.search, keys.sync, keys.backup, keys.help, keys.quit,
+func leaderTag(notebook, tag string) []leaderItem {
+	target := tag
+	if target == "" {
+		target = "pick…"
 	}
-	out := make([]string, 0, len(all))
-	for _, b := range all {
-		out = append(out, "  "+pad(selectedStyle.Render(strings.Join(b.keys, ", ")), 22)+dimStyle.Render(b.help))
+	return []leaderItem{
+		{"n", "new tag", "in " + notebook},
+		{"r", "rename tag", target},
+		{"d", "delete tag", target},
+		{"", "", ""},
+		{"[", "previous tag", ""},
+		{"]", "next tag", ""},
+		{"1-9", "jump to tag", ""},
 	}
-	return out
+}
+
+// hint is one "key label" pair on the bottom line.
+type hint struct{ key, label string }
+
+type helpGroup struct {
+	title string
+	rows  []binding
+}
+
+func helpGroups() [][]helpGroup {
+	sp := func(k, h string) binding { return bind("space "+k, h) }
+	return [][]helpGroup{
+		{
+			{"Move", []binding{keys.up, keys.top, keys.pane, keys.prevTag, keys.jumpTag, keys.enter}},
+			{"Edit", []binding{keys.newItem, keys.rename, keys.del, keys.move, keys.find}},
+			{"Space", []binding{sp("f", "find note"), sp("n", "new note"), sp("N", "new notebook"),
+				sp("t", "tag › n r d"), sp("s", "sync (pull)"), sp("b", "backup (push)")}},
+		},
+		{
+			{"Pickers & prompts", []binding{keys.pickUp, keys.pickDown, keys.accept,
+				bind("esc", "cancel / back"), keys.deleteWord}},
+			{"Finder", []binding{keys.finderMove, keys.finderRename, keys.finderDel}},
+			{"App", []binding{keys.sync, keys.backup, keys.help, keys.quit, keys.cancel}},
+		},
+	}
 }

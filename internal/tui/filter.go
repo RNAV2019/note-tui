@@ -1,50 +1,46 @@
 package tui
 
-import (
-	"strings"
+import "github.com/sahilm/fuzzy"
 
-	"github.com/sahilm/fuzzy"
-)
-
-type Match struct {
-	Value          string
-	MatchedIndexes []int
+type match struct {
+	index   int   // position in the original item list
+	matched []int // byte offsets of the characters the query hit
 }
 
-// FilterItems returns items fuzzy-matching query, best first.
-// An empty query returns everything in original order.
-func FilterItems(query string, items []string) []Match {
+// filterItems returns the items fuzzy-matching query, best first. An empty
+// query returns everything in its original order.
+func filterItems(query string, items []string) []match {
 	if query == "" {
-		out := make([]Match, len(items))
-		for i, s := range items {
-			out[i] = Match{Value: s}
+		out := make([]match, len(items))
+		for i := range items {
+			out[i] = match{index: i}
 		}
 		return out
 	}
 	results := fuzzy.Find(query, items)
-	out := make([]Match, len(results))
+	out := make([]match, len(results))
 	for i, r := range results {
-		out[i] = Match{Value: r.Str, MatchedIndexes: r.MatchedIndexes}
+		out[i] = match{index: r.Index, matched: r.MatchedIndexes}
 	}
 	return out
 }
 
-// highlight underlines the characters of a match that the query hit.
-func highlight(m Match) string {
-	if len(m.MatchedIndexes) == 0 {
-		return m.Value
+// putMatch writes s with the matched characters in bold rose. The first
+// dimLen bytes (a folder prefix) are drawn in dimFg so names stand out.
+func (g *grid) putMatch(x, y int, s string, m match, base style, dimLen int, dimFg color) int {
+	hit := make(map[int]bool, len(m.matched))
+	for _, i := range m.matched {
+		hit[i] = true
 	}
-	idx := make(map[int]bool, len(m.MatchedIndexes))
-	for _, i := range m.MatchedIndexes {
-		idx[i] = true
-	}
-	var b strings.Builder
-	for i, r := range m.Value {
-		if idx[i] {
-			b.WriteString(matchStyle.Render(string(r)))
-		} else {
-			b.WriteString(string(r))
+	for i, r := range s {
+		st := base
+		switch {
+		case hit[i]:
+			st.fg, st.bold = cRose, true
+		case i < dimLen:
+			st.fg, st.bold = dimFg, false
 		}
+		x = g.put(x, y, string(r), st)
 	}
-	return b.String()
+	return x
 }

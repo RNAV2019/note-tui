@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"fmt"
+	"errors"
 	"path/filepath"
 	"strings"
 	"time"
@@ -11,383 +11,285 @@ import (
 	"github.com/RNAV2019/note-tui/internal/notes"
 )
 
-type actionKind int
-
-const (
-	actNewNotebook actionKind = iota
-	actNewTag
-	actPickNoteTag // first step of the two-step new-note flow
-	actNewNote
-	actRename
-	actDelete
-	actMoveNote
-	actOpenDisplay // open the note matching a "notebook/tag/name" string
-)
-
-// actionMsg carries a resolved overlay choice back into Update, so the
-// overlay callbacks stay pure and all mutation happens in one place.
-type actionMsg struct {
-	kind  actionKind
-	value string
-}
-
-func act(kind actionKind) func(string) tea.Cmd {
-	return func(value string) tea.Cmd {
-		return func() tea.Msg { return actionMsg{kind: kind, value: value} }
-	}
-}
+// nowFunc is the clock, swappable in tests.
+var nowFunc = time.Now
 
 // ---------------------------------------------------------------- triggers
 
-func (m Model) startNew() (tea.Model, tea.Cmd) {
+func (m *Model) startNewNotebook() {
+	m.ov = newPromptOverlay(forNewNotebook, "")
+}
+
+func (m *Model) startNewTag() {
 	nb := m.currentNotebook()
-
-	switch m.focus {
-	case paneNotebooks:
-		m.ov = newPrompt("New notebook", "", act(actNewNotebook))
-
-	case paneTags:
-		if nb == "" {
-			m.setStatus("", fmt.Errorf("create a notebook first"))
-			break
-		}
-		m.ov = newPrompt("New tag in "+nb, "", act(actNewTag))
-
-	case paneNotes:
-		if nb == "" {
-			m.setStatus("", fmt.Errorf("create a notebook first"))
-			break
-		}
-		if len(m.tags) == 0 {
-			m.setStatus("", fmt.Errorf("create a tag first — press n in the Tags pane"))
-			break
-		}
-		// When a concrete tag is already selected, skip straight to the title;
-		// only the ambiguous "all" view has to ask which tag.
-		if tag := m.selectedTag(); tag != "" {
-			m.pendingTag = tag
-			m.ov = newPrompt("New note in "+nb+"/"+tag, "", act(actNewNote))
-			break
-		}
-		m.ov = newList("New note · pick a tag", m.tags, act(actPickNoteTag))
+	if nb == "" {
+		m.setStatus(statusErr, "create a notebook first — press space N")
+		return
 	}
-	return m, nil
+	m.ov = newPromptOverlay(forNewTag, "")
+	m.ov.notebook = nb
 }
 
-func (m Model) startRename() (tea.Model, tea.Cmd) {
-	switch m.focus {
-	case paneNotebooks:
+func (m *Model) startNewNote() {
+	nb := m.currentNotebook()
+	switch {
+	case nb == "":
+		m.setStatus(statusErr, "create a notebook first — press n in the sidebar")
+		return
+	case len(m.tags) == 0:
+		m.setStatus(statusErr, "create a tag first — press space t n")
+		return
+	}
+	// With a tag tab active, skip straight to the title; only the ambiguous
+	// "all" tab has to ask which tag, and then only if there is a choice.
+	tag := m.selectedTag()
+	if tag == "" && len(m.tags) == 1 {
+		tag = m.tags[0]
+	}
+	if tag != "" {
+		m.pendingTag = tag
+		m.ov = newPromptOverlay(forNewNote, "")
+		m.ov.notebook, m.ov.tag = nb, tag
+		return
+	}
+	m.ov = m.tagPicker(forPickNewNoteTag)
+}
+
+// tagPicker lists the current notebook's tags with their note counts.
+func (m Model) tagPicker(p purpose) overlay {
+	nb := m.currentNotebook()
+	items := make([]pickItem, len(m.tags))
+	for i, t := range m.tags {
+		items[i] = pickItem{value: t, count: m.countNotes(nb, t)}
+	}
+	o := newPickerOverlay(p, items, m.tags)
+	o.notebook = nb
+	return o
+}
+
+func (m *Model) startRename() {
+	if m.focus == paneSidebar {
 		nb := m.currentNotebook()
 		if nb == "" {
-			return m, nil
+			return
 		}
-		m.ov = newPrompt("Rename notebook", nb, act(actRename))
-
-	case paneTags:
-		tag := m.selectedTag()
-		if tag == "" {
-			m.setStatus("", fmt.Errorf(`select a tag to rename ("all" is not a tag)`))
-			return m, nil
-		}
-		m.ov = newPrompt("Rename tag", tag, act(actRename))
-
-	case paneNotes:
-		n, ok := m.currentNote()
-		if !ok {
-			return m, nil
-		}
-		m.ov = newPrompt("Rename note", n.Name, act(actRename))
+		m.ov = newPromptOverlay(forRenameNotebook, nb)
+		m.ov.notebook = nb
+		return
 	}
-	return m, nil
+	if n, ok := m.currentNote(); ok {
+		m.startRenameNote(n)
+	}
 }
 
-func (m Model) startDelete() (tea.Model, tea.Cmd) {
-	confirm := func() tea.Cmd { return act(actDelete)("") }
+func (m *Model) startRenameNote(n notes.Note) {
+	m.ov = newPromptOverlay(forRenameNote, n.Name)
+	m.ov.note = n
+}
 
-	switch m.focus {
-	case paneNotebooks:
+func (m *Model) startRenameTag() {
+	if m.currentNotebook() == "" || len(m.tags) == 0 {
+		m.setStatus(statusErr, "no tags to rename — press space t n to add one")
+		return
+	}
+	tag := m.selectedTag()
+	if tag == "" {
+		m.ov = m.tagPicker(forPickRenameTag)
+		return
+	}
+	m.ov = newPromptOverlay(forRenameTag, tag)
+	m.ov.notebook, m.ov.tag = m.currentNotebook(), tag
+}
+
+func (m *Model) startDelete() {
+	if m.focus == paneSidebar {
 		nb := m.currentNotebook()
 		if nb == "" {
-			return m, nil
+			return
 		}
-		m.ov = newConfirm(fmt.Sprintf("Delete notebook %q and all %d notes in it?",
-			nb, m.notebookCount(nb)), confirm)
-
-	case paneTags:
-		tag := m.selectedTag()
-		if tag == "" {
-			m.setStatus("", fmt.Errorf(`select a tag to delete ("all" is not a tag)`))
-			return m, nil
-		}
-		m.ov = newConfirm(fmt.Sprintf("Delete tag %q and all %d notes in it?",
-			tag, m.tagCount(m.currentNotebook(), tag)), confirm)
-
-	case paneNotes:
-		n, ok := m.currentNote()
-		if !ok {
-			return m, nil
-		}
-		m.ov = newConfirm(fmt.Sprintf("Delete note %q?", n.Display()), confirm)
+		m.ov = overlay{kind: ovConfirm, purpose: forDeleteNotebook, notebook: nb}
+		return
 	}
-	return m, nil
+	if n, ok := m.currentNote(); ok {
+		m.startDeleteNote(n)
+	}
 }
 
-func (m Model) startMove() (tea.Model, tea.Cmd) {
-	n, ok := m.currentNote()
-	if !ok {
-		return m, nil
-	}
-	dests, err := m.destinations()
-	if err != nil {
-		m.setStatus("", err)
-		return m, nil
-	}
-	// Drop the note's current home; moving there is a no-op.
-	here := n.Notebook + "/" + n.Tag
-	filtered := make([]string, 0, len(dests))
-	for _, d := range dests {
-		if d != here {
-			filtered = append(filtered, d)
-		}
-	}
-	if len(filtered) == 0 {
-		m.setStatus("", fmt.Errorf("no other tag to move %q into", n.Name))
-		return m, nil
-	}
-	m.ov = newList("Move "+n.Name+" to", filtered, act(actMoveNote))
-	return m, nil
+func (m *Model) startDeleteNote(n notes.Note) {
+	m.ov = overlay{kind: ovConfirm, purpose: forDeleteNote, note: n}
 }
 
-// destinations lists every "notebook/tag" pair a note could live in.
-func (m Model) destinations() ([]string, error) {
-	var out []string
+func (m *Model) startDeleteTag() {
+	if m.currentNotebook() == "" || len(m.tags) == 0 {
+		m.setStatus(statusErr, "no tags to delete")
+		return
+	}
+	tag := m.selectedTag()
+	if tag == "" {
+		m.ov = m.tagPicker(forPickDeleteTag)
+		return
+	}
+	m.ov = overlay{kind: ovConfirm, purpose: forDeleteTag, notebook: m.currentNotebook(), tag: tag}
+}
+
+func (m *Model) startMove(n notes.Note) {
+	var items []pickItem
+	var labels []string
 	for _, nb := range m.notebooks {
 		tags, err := m.store.Tags(nb)
 		if err != nil {
-			return nil, err
+			m.setError(err)
+			return
 		}
 		for _, t := range tags {
-			out = append(out, nb+"/"+t)
+			if nb == n.Notebook && t == n.Tag {
+				continue // moving a note to where it already is does nothing
+			}
+			dest := nb + "/" + t
+			items = append(items, pickItem{value: dest, count: m.countNotes(nb, t)})
+			labels = append(labels, dest)
 		}
 	}
-	return out, nil
-}
-
-func (m Model) startSearch() Model {
-	items := make([]string, len(m.all))
-	for i, n := range m.all {
-		items[i] = n.Display()
+	if len(items) == 0 {
+		m.setStatus(statusErr, "no other tag to move "+n.Name+" into")
+		return
 	}
-	m.ov = newList("Search notes", items, act(actOpenDisplay))
-	return m
+	m.ov = newPickerOverlay(forMoveNote, items, labels)
+	m.ov.note = n
 }
 
 // ---------------------------------------------------------------- apply
 
-func (m Model) applyAction(msg actionMsg) (tea.Model, tea.Cmd) {
-	nb := m.currentNotebook()
+func (m Model) applyPrompt(o overlay) (tea.Model, tea.Cmd) {
+	value := o.query()
+	switch o.purpose {
+	case forNewNotebook:
+		if err := m.store.CreateNotebook(value); err != nil {
+			m.setError(err)
+			return m, nil
+		}
+		slug := notes.Slugify(value)
+		m.reloadOrStatus()
+		m.selectNotebook(slug)
+		m.focus = paneSidebar
+		m.setStatus(statusOK, "created notebook "+slug)
 
-	switch msg.kind {
-	case actNewNotebook:
-		if err := m.store.CreateNotebook(msg.value); err != nil {
-			m.setStatus("", err)
+	case forNewTag:
+		if err := m.store.CreateTag(o.notebook, value); err != nil {
+			m.setError(err)
+			return m, nil
+		}
+		slug := notes.Slugify(value)
+		m.reloadOrStatus()
+		m.selectTag(slug)
+		m.setStatus(statusOK, "created tag "+slug)
+
+	case forNewNote:
+		return m.createNote(o.notebook, o.tag, value)
+
+	case forRenameNotebook:
+		slug, err := m.store.RenameNotebook(o.notebook, value)
+		if err != nil {
+			m.setError(err)
 			return m, nil
 		}
 		m.reloadOrStatus()
-		m.selectNotebook(notes.Slugify(msg.value))
-		m.setStatus("created notebook "+notes.Slugify(msg.value), nil)
+		m.selectNotebook(slug)
+		m.setStatus(statusOK, "renamed notebook to "+slug)
 
-	case actNewTag:
-		if err := m.store.CreateTag(nb, msg.value); err != nil {
-			m.setStatus("", err)
+	case forRenameTag:
+		slug, err := m.store.RenameTag(o.notebook, o.tag, value)
+		if err != nil {
+			m.setError(err)
 			return m, nil
 		}
 		m.reloadOrStatus()
-		m.selectTag(notes.Slugify(msg.value))
-		m.setStatus("created tag "+notes.Slugify(msg.value), nil)
+		m.selectTag(slug)
+		m.setStatus(statusOK, "renamed tag to "+slug)
 
-	case actPickNoteTag:
-		m.pendingTag = msg.value
-		m.ov = newPrompt("New note in "+nb+"/"+msg.value, "", act(actNewNote))
-		return m, nil
-
-	case actNewNote:
-		return m.createNote(nb, m.pendingTag, msg.value)
-
-	case actRename:
-		return m.rename(msg.value)
-
-	case actDelete:
-		return m.deleteSelected()
-
-	case actMoveNote:
-		return m.moveNote(msg.value)
-
-	case actOpenDisplay:
-		for _, n := range m.all {
-			if n.Display() == msg.value {
-				m.selectNotebook(n.Notebook)
-				m.selectTag(n.Tag)
-				m.selectNote(n.Name)
-				m.focus = paneNotes
-				return m.openNote(n)
-			}
+	case forRenameNote:
+		renamed, err := m.store.RenameNote(o.note, value)
+		if err != nil {
+			m.setError(err)
+			return m, nil
 		}
+		m.reloadOrStatus()
+		m.selectNote(renamed.Name, renamed.Tag)
+		m.setStatus(statusOK, "renamed note to "+renamed.Name)
 	}
 	return m, nil
+}
+
+func (m *Model) applyPick(o overlay, value string) {
+	switch o.purpose {
+	case forPickNewNoteTag:
+		m.pendingTag = value
+		m.ov = newPromptOverlay(forNewNote, "")
+		m.ov.notebook, m.ov.tag, m.ov.back = o.notebook, value, true
+
+	case forPickRenameTag:
+		m.ov = newPromptOverlay(forRenameTag, value)
+		m.ov.notebook, m.ov.tag = o.notebook, value
+
+	case forPickDeleteTag:
+		m.ov = overlay{kind: ovConfirm, purpose: forDeleteTag, notebook: o.notebook, tag: value}
+
+	case forMoveNote:
+		nb, tag, ok := strings.Cut(value, "/")
+		if !ok {
+			return
+		}
+		moved, err := m.store.MoveNote(o.note, nb, tag)
+		if err != nil {
+			m.setError(err)
+			return
+		}
+		m.reloadOrStatus()
+		m.revealNote(moved)
+		m.setStatus(statusOK, "moved to "+moved.Display())
+	}
+}
+
+func (m *Model) applyDelete(o overlay) {
+	var err error
+	var what string
+	switch o.purpose {
+	case forDeleteNotebook:
+		what = "notebook " + o.notebook
+		err = m.store.DeleteNotebook(o.notebook)
+	case forDeleteTag:
+		what = "tag " + o.tag
+		err = m.store.DeleteTag(o.notebook, o.tag)
+		m.tagCur = 0
+	case forDeleteNote:
+		what = "note " + o.note.Name
+		err = m.store.DeleteNote(o.note)
+	default:
+		err = errors.New("nothing to delete")
+	}
+	if err != nil {
+		m.setError(err)
+		return
+	}
+	m.reloadOrStatus()
+	if len(m.notebooks) == 0 {
+		m.focus = paneSidebar
+	}
+	m.setStatus(statusOK, "deleted "+what)
 }
 
 func (m Model) createNote(nb, tag, title string) (tea.Model, tea.Cmd) {
 	path, err := m.store.CreateNote(nb, tag, title)
 	if err != nil {
-		m.setStatus("", err)
+		m.setError(err)
 		return m, nil
 	}
 	m.pendingTag = ""
 	m.reloadOrStatus()
 	name := strings.TrimSuffix(filepath.Base(path), ".typ")
+	m.selectNotebook(nb)
 	m.selectTag(tag)
-	m.selectNote(name)
+	m.selectNote(name, tag)
 	m.focus = paneNotes
 	return m.openNote(notes.Note{Notebook: nb, Tag: tag, Name: name, Path: path})
-}
-
-func (m Model) rename(value string) (tea.Model, tea.Cmd) {
-	nb := m.currentNotebook()
-
-	switch m.focus {
-	case paneNotebooks:
-		slug, err := m.store.RenameNotebook(nb, value)
-		if err != nil {
-			m.setStatus("", err)
-			return m, nil
-		}
-		m.reloadOrStatus()
-		m.selectNotebook(slug)
-		m.setStatus("renamed notebook to "+slug, nil)
-
-	case paneTags:
-		old := m.selectedTag()
-		slug, err := m.store.RenameTag(nb, old, value)
-		if err != nil {
-			m.setStatus("", err)
-			return m, nil
-		}
-		m.reloadOrStatus()
-		m.selectTag(slug)
-		m.setStatus("renamed tag to "+slug, nil)
-
-	case paneNotes:
-		n, ok := m.currentNote()
-		if !ok {
-			return m, nil
-		}
-		renamed, err := m.store.RenameNote(n, value)
-		if err != nil {
-			m.setStatus("", err)
-			return m, nil
-		}
-		m.reloadOrStatus()
-		m.selectNote(renamed.Name)
-		m.setStatus("renamed note to "+renamed.Name, nil)
-	}
-	return m, nil
-}
-
-func (m Model) deleteSelected() (tea.Model, tea.Cmd) {
-	nb := m.currentNotebook()
-
-	var err error
-	var what string
-	switch m.focus {
-	case paneNotebooks:
-		what = "notebook " + nb
-		err = m.store.DeleteNotebook(nb)
-	case paneTags:
-		tag := m.selectedTag()
-		what = "tag " + tag
-		err = m.store.DeleteTag(nb, tag)
-		m.tagCur = 0
-	case paneNotes:
-		n, ok := m.currentNote()
-		if !ok {
-			return m, nil
-		}
-		what = "note " + n.Name
-		err = m.store.DeleteNote(n)
-	}
-	if err != nil {
-		m.setStatus("", err)
-		return m, nil
-	}
-	m.reloadOrStatus()
-	m.setStatus("deleted "+what, nil)
-	return m, nil
-}
-
-func (m Model) moveNote(dest string) (tea.Model, tea.Cmd) {
-	n, ok := m.currentNote()
-	if !ok {
-		return m, nil
-	}
-	nb, tag, found := strings.Cut(dest, "/")
-	if !found {
-		return m, nil
-	}
-	moved, err := m.store.MoveNote(n, nb, tag)
-	if err != nil {
-		m.setStatus("", err)
-		return m, nil
-	}
-	m.reloadOrStatus()
-	m.selectNotebook(moved.Notebook)
-	m.selectTag(moved.Tag)
-	m.selectNote(moved.Name)
-	m.setStatus("moved to "+moved.Display(), nil)
-	return m, nil
-}
-
-// ---------------------------------------------------------------- selection
-
-func (m *Model) selectNotebook(name string) {
-	for i, nb := range m.notebooks {
-		if nb == name {
-			m.nbCur, m.tagCur = i, 0
-			m.refreshTagsOrStatus()
-			return
-		}
-	}
-}
-
-func (m *Model) selectTag(name string) {
-	for i, t := range m.tags {
-		if t == name {
-			m.tagCur = i + 1
-			m.refreshVisible()
-			return
-		}
-	}
-}
-
-func (m *Model) selectNote(name string) {
-	for i, n := range m.visible {
-		if n.Name == name {
-			m.noteCur = i
-			return
-		}
-	}
-}
-
-// backupCmd commits and pushes, reporting whether a push actually happened.
-func (m Model) backupCmd() tea.Cmd {
-	return func() tea.Msg {
-		pushed, err := m.store.Backup("backup: " + time.Now().Format("2006-01-02 15:04"))
-		if err != nil {
-			return gitDoneMsg{err: err}
-		}
-		if pushed {
-			return gitDoneMsg{text: "backed up and pushed"}
-		}
-		return gitDoneMsg{text: "backed up locally (no remote configured)"}
-	}
 }

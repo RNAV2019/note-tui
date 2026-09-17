@@ -5,231 +5,172 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
+
+	"github.com/RNAV2019/note-tui/internal/notes"
 )
 
 type overlayKind int
 
 const (
-	overlayNone    overlayKind = iota
-	overlayPrompt              // single-line text entry
-	overlayConfirm             // yes/no
-	overlayList                // fuzzy-filtered choice; also powers search
-	overlayHelp
+	ovNone    overlayKind = iota
+	ovLeader              // space menu (which-key)
+	ovPrompt              // single-line text entry
+	ovPicker              // filtered choice
+	ovFinder              // fuzzy search over every note, with preview
+	ovConfirm             // y/n before deleting
+	ovHelp
 )
 
-const overlayMaxRows = 10
+// purpose says what an overlay's answer is for.
+type purpose int
 
-// overlay is the modal layer: at most one is open at a time, and it swallows
-// every key until it resolves.
-type overlay struct {
-	kind    overlayKind
-	title   string
-	message string
-	input   textinput.Model
-	items   []string
-	matches []Match
-	cursor  int
+const (
+	forNone purpose = iota
+	forNewNotebook
+	forNewTag
+	forNewNote
+	forRenameNotebook
+	forRenameTag
+	forRenameNote
+	forDeleteNotebook
+	forDeleteTag
+	forDeleteNote
+	forMoveNote
+	forPickNewNoteTag
+	forPickRenameTag
+	forPickDeleteTag
+)
 
-	accept  func(string) tea.Cmd // prompt and list
-	confirm func() tea.Cmd       // confirm
+type pickItem struct {
+	value string
+	count int
 }
 
-func newInput(placeholder, initial string) textinput.Model {
+// overlay is the modal layer: at most one is open, and it takes every key
+// until it resolves. The targets are captured when it opens, so an action
+// always applies to what the user was looking at.
+type overlay struct {
+	kind    overlayKind
+	purpose purpose
+	sub     string // leader submenu: "" or "tag"
+
+	input   textinput.Model
+	items   []pickItem
+	labels  []string // what the filter matches against
+	matches []match
+	cursor  int
+
+	notebook, tag string
+	note          notes.Note
+	candidates    []notes.Note // what the finder searches, newest first
+
+	// back reopens the tag picker when esc is pressed on a new-note title
+	// prompt that the picker led to.
+	back bool
+}
+
+func (o overlay) active() bool { return o.kind != ovNone }
+
+func newTextInput(initial string) textinput.Model {
 	ti := textinput.New()
-	ti.Placeholder = placeholder
+	ti.Prompt = ""
+	ti.CharLimit = 120
 	ti.SetValue(initial)
+	ti.CursorEnd()
 	ti.Focus()
 	return ti
 }
 
-func newPrompt(title, initial string, accept func(string) tea.Cmd) overlay {
-	return overlay{
-		kind:   overlayPrompt,
-		title:  title,
-		input:  newInput("name…", initial),
-		accept: accept,
-	}
+func newPromptOverlay(p purpose, initial string) overlay {
+	return overlay{kind: ovPrompt, purpose: p, input: newTextInput(initial)}
 }
 
-func newConfirm(message string, confirm func() tea.Cmd) overlay {
-	return overlay{kind: overlayConfirm, title: "Confirm", message: message, confirm: confirm}
+func newPickerOverlay(p purpose, items []pickItem, labels []string) overlay {
+	o := overlay{kind: ovPicker, purpose: p, input: newTextInput(""), items: items, labels: labels}
+	o.refilter()
+	return o
 }
 
-func newList(title string, items []string, accept func(string) tea.Cmd) overlay {
-	return overlay{
-		kind:    overlayList,
-		title:   title,
-		input:   newInput("type to filter…", ""),
-		items:   items,
-		matches: FilterItems("", items),
-		accept:  accept,
-	}
+func (o *overlay) refilter() {
+	o.matches = filterItems(o.input.Value(), o.labels)
+	o.cursor = 0
 }
 
-func newHelp() overlay { return overlay{kind: overlayHelp, title: "Keys"} }
-
-func (o overlay) active() bool { return o.kind != overlayNone }
-
-// selected returns the highlighted list entry, or "" when the list is empty.
-func (o overlay) selected() string {
+// selected returns the index of the highlighted item, or -1.
+func (o overlay) selected() int {
 	if o.cursor < 0 || o.cursor >= len(o.matches) {
-		return ""
+		return -1
 	}
-	return o.matches[o.cursor].Value
+	return o.matches[o.cursor].index
 }
 
-// update handles a key for the overlay. It returns the new overlay state, a
-// command to run, and whether the overlay should close.
-func (o overlay) update(msg tea.Msg) (overlay, tea.Cmd, bool) {
-	key, isKey := msg.(tea.KeyMsg)
-	if isKey {
-		switch s := key.String(); {
-		case s == "esc":
-			return o, nil, true
-
-		case o.kind == overlayHelp:
-			// Any key dismisses help.
-			return o, nil, true
-
-		case o.kind == overlayConfirm:
-			switch s {
-			case "y", "Y", "enter":
-				return o, o.confirm(), true
-			case "n", "N", "q":
-				return o, nil, true
-			}
-			return o, nil, false
-
-		case s == "enter":
-			if o.kind == overlayPrompt {
-				value := strings.TrimSpace(o.input.Value())
-				if value == "" {
-					return o, nil, true
-				}
-				return o, o.accept(value), true
-			}
-			if sel := o.selected(); sel != "" {
-				return o, o.accept(sel), true
-			}
-			return o, nil, true
-
-		case keys.up.matches(s) && o.kind == overlayList && s != "k":
-			// "k" is a literal character while filtering, so only the arrow
-			// and ctrl bindings move the cursor here.
-			if o.cursor > 0 {
-				o.cursor--
-			}
-			return o, nil, false
-
-		case keys.down.matches(s) && o.kind == overlayList && s != "j":
-			if o.cursor < len(o.matches)-1 {
-				o.cursor++
-			}
-			return o, nil, false
-		}
+// updateInput feeds a message to the text input, refiltering if it changed.
+func (o *overlay) updateInput(msg tea.Msg) tea.Cmd {
+	before := o.input.Value()
+	var cmd tea.Cmd
+	o.input, cmd = o.input.Update(msg)
+	if o.input.Value() != before && (o.kind == ovPicker || o.kind == ovFinder) {
+		o.refilter()
 	}
-
-	if o.kind == overlayPrompt || o.kind == overlayList {
-		prev := o.input.Value()
-		var cmd tea.Cmd
-		o.input, cmd = o.input.Update(msg)
-		if o.kind == overlayList && o.input.Value() != prev {
-			// Results are score-ranked, so any query change invalidates the cursor.
-			o.matches = FilterItems(o.input.Value(), o.items)
-			o.cursor = 0
-		}
-		return o, cmd, false
-	}
-	return o, nil, false
+	return cmd
 }
 
-// render draws the overlay as a centred box, returning body lines of the
-// given width.
-func (o overlay) render(width, height int) []string {
-	boxWidth := min(max(width-8, 20), 64)
-	if o.kind == overlayHelp {
-		boxWidth = min(max(width-8, 20), 72)
+// moveSelection handles the list keys shared by pickers and the finder.
+// Letters are text here, so only arrows and ctrl+n/p move.
+func (o *overlay) moveSelection(key string) bool {
+	switch {
+	case keys.pickUp.matches(key):
+		o.cursor = max(o.cursor-1, 0)
+	case keys.pickDown.matches(key):
+		o.cursor = min(o.cursor+1, max(len(o.matches)-1, 0))
+	default:
+		return false
 	}
+	return true
+}
 
-	var content []string
+// crumb is appended to the statusline breadcrumb while the overlay is open.
+func (o overlay) crumb() string {
+	switch o.purpose {
+	case forNewNotebook:
+		return "new notebook"
+	case forNewTag:
+		return "new tag"
+	case forNewNote, forPickNewNoteTag:
+		return "new note"
+	case forRenameNotebook, forRenameTag, forRenameNote, forPickRenameTag:
+		return "rename"
+	case forDeleteNotebook:
+		return "delete notebook"
+	case forDeleteTag, forPickDeleteTag:
+		return "delete tag"
+	case forDeleteNote:
+		return "delete note"
+	case forMoveNote:
+		return "move"
+	}
 	switch o.kind {
-	case overlayPrompt:
-		content = []string{o.input.View()}
-
-	case overlayConfirm:
-		content = append(wrap(o.message, boxWidth-2), "", dimStyle.Render("y confirm · n cancel"))
-
-	case overlayList:
-		content = append(content, o.input.View(), "")
-		if len(o.matches) == 0 {
-			content = append(content, dimStyle.Render("  no matches"))
-			break
-		}
-		start := 0
-		if o.cursor >= overlayMaxRows {
-			start = o.cursor - overlayMaxRows + 1
-		}
-		for i := start; i < min(start+overlayMaxRows, len(o.matches)); i++ {
-			line := highlight(o.matches[i])
-			if i == o.cursor {
-				content = append(content, selectedStyle.Render(cursorGlyph)+line)
-			} else {
-				content = append(content, "  "+line)
-			}
-		}
-
-	case overlayHelp:
-		content = helpLines()
+	case ovHelp:
+		return "keys"
 	}
-
-	box := boxLines(o.title, content, boxWidth)
-
-	// Centre the box vertically in the body.
-	top := max((height-len(box))/2, 0)
-	body := make([]string, 0, height)
-	for i := 0; i < top; i++ {
-		body = append(body, "")
-	}
-	left := strings.Repeat(" ", max((width-boxWidth)/2, 0))
-	for _, line := range box {
-		body = append(body, left+line)
-	}
-	return body
+	return ""
 }
 
-// boxLines draws a titled rounded box of exactly width cells.
-func boxLines(title string, content []string, width int) []string {
-	inner := width - 2
-	dashes := max(inner-3-lipgloss.Width(title), 0)
-	out := []string{
-		frameStyle.Render("╭─ ") + headerStyle.Render(title) +
-			frameStyle.Render(" "+strings.Repeat("─", dashes)+"╮"),
+func (o overlay) mode() mode {
+	switch o.kind {
+	case ovLeader:
+		return modeLeader
+	case ovFinder:
+		return modeFind
+	case ovPrompt, ovPicker:
+		return modeInput
+	case ovConfirm:
+		return modeConfirm
+	case ovHelp:
+		return modeKeys
 	}
-	blank := frameStyle.Render("│") + strings.Repeat(" ", inner) + frameStyle.Render("│")
-	out = append(out, blank)
-	for _, line := range content {
-		out = append(out, frameStyle.Render("│")+" "+pad(line, inner-2)+" "+frameStyle.Render("│"))
-	}
-	out = append(out, blank)
-	return append(out, frameStyle.Render("╰"+strings.Repeat("─", inner)+"╯"))
+	return modeNormal
 }
 
-// wrap breaks text into lines of at most width cells, splitting on spaces.
-func wrap(text string, width int) []string {
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return []string{""}
-	}
-	var out []string
-	line := words[0]
-	for _, w := range words[1:] {
-		if lipgloss.Width(line)+1+lipgloss.Width(w) > width {
-			out = append(out, line)
-			line = w
-			continue
-		}
-		line += " " + w
-	}
-	return append(out, line)
-}
+// query is the text typed into the overlay, trimmed.
+func (o overlay) query() string { return strings.TrimSpace(o.input.Value()) }
