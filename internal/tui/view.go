@@ -461,6 +461,14 @@ func (m Model) noteByPath(path string) (notes.Note, bool) {
 	return notes.Note{}, false
 }
 
+// wordmark is the welcome pane's title. Every line is the same width so the
+// rows stay aligned when each is centred on its own.
+var wordmark = []string{
+	"█▀▀▄ ▄▀▀▄ ▄█▄  ▄▀▀▄",
+	"█  █ █  █  █   █▀▀▀",
+	"▀  ▀  ▀▀   ▀▀   ▀▀▀",
+}
+
 func (m Model) drawWelcome(g *grid, r rect) {
 	if r.h < 3 {
 		return
@@ -496,12 +504,13 @@ func (m Model) drawWelcome(g *grid, r rect) {
 	x := in.x + max((in.w-blockW)/2, 1)
 
 	// Drop the wordmark first when the pane is short.
-	y := in.y + max(min((in.h-19)/2, 5), 0)
-	if in.h >= 19 {
-		g.putCenter(in.x, in.w, y, "n  o  t  e", bold(cIris))
-		g.putCenter(in.x, in.w, y+1, "──────────", fg(cRose))
-		g.putCenter(in.x, in.w, y+3, "Typst lecture notes, one keystroke away.", fg(cSubtle))
-		y += 6
+	y := in.y + max(min((in.h-20)/2, 5), 0)
+	if in.h >= 20 {
+		for i, line := range wordmark {
+			g.putCenter(in.x, in.w, y+i, line, bold(cIris))
+		}
+		g.putCenter(in.x, in.w, y+len(wordmark)+1, "Typst lecture notes, one keystroke away.", fg(cSubtle))
+		y += len(wordmark) + 4
 	}
 	for _, s := range steps {
 		if fits(y) {

@@ -85,7 +85,7 @@ func TestEmptyTreeShowsTheWelcomeSteps(t *testing.T) {
 	store := newEmptyStore(t)
 	m := newModelOver(t, store)
 	m = sized(t, m, 120, 34)
-	mustContain(t, m, "n  o  t  e", "to create your first notebook", "template", "new notebook")
+	mustContain(t, m, wordmark[0], "to create your first notebook", "template", "new notebook")
 }
 
 func TestTagOverflowIsMarked(t *testing.T) {
