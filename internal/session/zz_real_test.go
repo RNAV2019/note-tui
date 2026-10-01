@@ -23,8 +23,8 @@ func TestRealHeliumLifecycle(t *testing.T) {
 	profile := filepath.Join(dir, "profile")
 	opts := Options{
 		Editor: editor,
-		Preview: "helium --app={url} --class=note-preview --user-data-dir={profile} " +
-			"--no-first-run --no-default-browser-check",
+		Preview: "helium --app={url} --user-data-dir={profile} " +
+			"--no-first-run --no-default-browser-check --disable-extensions",
 		PreviewURL:     "http://127.0.0.1:23635",
 		PreviewProfile: profile,
 	}
@@ -34,7 +34,7 @@ func TestRealHeliumLifecycle(t *testing.T) {
 		time.Sleep(6 * time.Second)
 		out, _ := exec.Command("hyprctl", "clients", "-j").Output()
 		procs, _ := exec.Command("pgrep", "-fc", "user-data-dir="+profile).Output()
-		t.Logf("during edit: note-preview windows=%d helium procs=%s classes=%v", strings.Count(string(out), "note-preview"), strings.TrimSpace(string(procs)), strings.Count(string(out), "\"class\""))
+		t.Logf("during edit: note-preview windows=%d helium procs=%s classes=%v", strings.Count(string(out), "__note-preview-"), strings.TrimSpace(string(procs)), strings.Count(string(out), "\"class\""))
 	}()
 
 	var warns []string
@@ -47,7 +47,7 @@ func TestRealHeliumLifecycle(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 	out, _ := exec.Command("hyprctl", "clients", "-j").Output()
-	if n := strings.Count(string(out), `"class": "note-preview"`); n != 0 {
+	if n := strings.Count(string(out), "__note-preview-"); n != 0 {
 		t.Errorf("%d note-preview windows survived after the editor exited", n)
 	}
 	if out, _ := exec.Command("pgrep", "-fc", "user-data-dir="+profile).Output(); strings.TrimSpace(string(out)) != "0" && strings.TrimSpace(string(out)) != "" {

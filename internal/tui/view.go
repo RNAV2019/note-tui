@@ -28,6 +28,7 @@ func (m Model) render() *grid {
 	if g.w == 0 || g.h == 0 {
 		return g
 	}
+	g.pal = m.pal
 	m.drawTabs(g)
 	if len(m.notebooks) == 0 {
 		if m.l.hasSidebar() {
@@ -72,7 +73,7 @@ func (m Model) welcomeRect() rect {
 
 func (m Model) drawTabs(g *grid) {
 	g.clear(0, 0, g.w, 1, cSurface)
-	x := g.put(0, 0, " note ", onB(cBase, cIris))
+	x := g.put(0, 0, " note ", onB(cBase, cBlue))
 	nb := m.currentNotebook()
 	if nb == "" {
 		g.put(x+1, 0, "no notebooks", on(cSubtle, cSurface))
@@ -81,7 +82,7 @@ func (m Model) drawTabs(g *grid) {
 		}
 		return
 	}
-	x = g.put(x, 0, " "+nb+" ", onB(cIris, cHLLow)) + 1
+	x = g.put(x, 0, " "+nb+" ", onB(cBlue, cHLLow)) + 1
 
 	limit := g.w - 1
 	if g.w >= previewMinWidth {
@@ -117,7 +118,7 @@ func (m Model) drawTabs(g *grid) {
 		start++
 	}
 	if start > 0 {
-		x = g.put(x, 0, "‹ ", onB(cGold, cSurface))
+		x = g.put(x, 0, "‹ ", onB(cYellow, cSurface))
 	}
 	for i := start; i < len(tabs); i++ {
 		t, active := tabs[i], i == m.tagCur
@@ -127,13 +128,13 @@ func (m Model) drawTabs(g *grid) {
 			reserve = 6
 		}
 		if x+width(t)+reserve > limit && !(active && rest == 0) {
-			g.put(x+1, 0, fmt.Sprintf("+%d ›", len(tabs)-i), onB(cGold, cSurface))
+			g.put(x+1, 0, fmt.Sprintf("+%d ›", len(tabs)-i), onB(cYellow, cSurface))
 			break
 		}
 		bg := cSurface
 		numFg, nameFg := cSubtle, cSubtle
 		if active {
-			bg, numFg, nameFg = cHLMed, cIris, cText
+			bg, numFg, nameFg = cHLMed, cBlue, cText
 		}
 		x = g.put(x, 0, " "+t.num+" ", on(numFg, bg))
 		x = g.put(x, 0, t.name, style{fg: nameFg, bg: bg, bold: active})
@@ -161,7 +162,7 @@ func tildify(path string) string {
 
 func paneColors(focused bool) (border, title color) {
 	if focused {
-		return cIris, cIris
+		return cBlue, cBlue
 	}
 	return cMuted, cSubtle
 }
@@ -172,7 +173,7 @@ func selection(selected, focused bool) (bg, marker color) {
 	case !selected:
 		return 0, 0
 	case focused:
-		return cHLMed, cIris
+		return cHLMed, cBlue
 	default:
 		return cHLLow, cSubtle
 	}
@@ -200,7 +201,7 @@ func (m Model) drawSidebar(g *grid, r rect) {
 	if len(m.notebooks) == 0 {
 		g.put(in.x+2, in.y+1, "(none)", fg(cSubtle))
 		if in.y+3 < listEnd {
-			g.segs(in.x+2, in.y+3, seg{"n", bold(cGold)}, seg{"  new notebook", fg(cText)})
+			g.segs(in.x+2, in.y+3, seg{"n", bold(cYellow)}, seg{"  new notebook", fg(cText)})
 		}
 	}
 	top := in.y + 1
@@ -219,7 +220,7 @@ func (m Model) drawSidebar(g *grid, r rect) {
 		count := strconv.Itoa(m.countNotes(nb, ""))
 		nameFg, countFg := cText, cSubtle
 		if sel && focused {
-			nameFg, countFg = cIris, cText
+			nameFg, countFg = cBlue, cText
 		}
 		g.put(in.x+4, y, truncate(nb, in.w-6-len(count)), style{fg: nameFg, bold: sel})
 		g.putRight(in.x+in.w-1, y, count, fg(countFg))
@@ -245,32 +246,32 @@ func (m Model) drawRepo(g *grid, in rect, top int) {
 	}
 	remote := row{"remote", st.Remote, cText}
 	if st.Remote == "" {
-		remote = row{"remote", "none", cGold}
+		remote = row{"remote", "none", cYellow}
 	}
-	sync := row{"sync", "up to date", cFoam}
+	sync := row{"sync", "up to date", cCyan}
 	switch {
 	case st.Remote == "":
 		sync = row{"sync", "—", cSubtle}
 	case st.Ahead > 0 || st.Behind > 0:
 		var parts []string
-		c := cFoam
+		c := cCyan
 		if st.Ahead > 0 {
 			parts = append(parts, fmt.Sprintf("↑%d", st.Ahead))
 		}
 		if st.Behind > 0 {
 			parts = append(parts, fmt.Sprintf("↓%d", st.Behind))
-			c = cLove
+			c = cRed
 		}
 		sync = row{"sync", strings.Join(parts, " "), c}
 	}
-	changes := row{"changes", "none", cFoam}
+	changes := row{"changes", "none", cCyan}
 	if st.Changed > 0 {
-		changes = row{"changes", plural(st.Changed, "file"), cGold}
+		changes = row{"changes", plural(st.Changed, "file"), cYellow}
 	}
 	synced := row{"synced", "never", cText}
 	switch {
 	case m.gitFailed:
-		synced = row{"synced", "failed", cLove}
+		synced = row{"synced", "failed", cRed}
 	case !st.LastSync.IsZero():
 		synced = row{"synced", relTime(st.LastSync), cText}
 	}
@@ -338,11 +339,11 @@ func (m Model) drawNotes(g *grid, r rect) {
 		}
 		nameFg, ageFg := cText, cSubtle
 		if sel && focused {
-			nameFg, ageFg = cIris, cText
+			nameFg, ageFg = cBlue, cText
 		}
 		g.put(in.x+2, y, truncate(n.Name, nameEnd-(in.x+2)), style{fg: nameFg, bold: sel})
 		if allView && tagW > 0 {
-			g.put(tagCol, y, truncate(n.Tag, tagW), fg(cFoam))
+			g.put(tagCol, y, truncate(n.Tag, tagW), fg(cCyan))
 		}
 		g.putRight(ageEnd, y, relTime(n.ModTime), fg(ageFg))
 	}
@@ -350,7 +351,7 @@ func (m Model) drawNotes(g *grid, r rect) {
 
 func (m Model) centerKeyLine(g *grid, in rect, y int, before, key, after string) {
 	w := textWidth(before + key + after)
-	g.segs(in.x+max((in.w-w)/2, 0), y, seg{before, fg(cSubtle)}, seg{key, bold(cGold)}, seg{after, fg(cSubtle)})
+	g.segs(in.x+max((in.w-w)/2, 0), y, seg{before, fg(cSubtle)}, seg{key, bold(cYellow)}, seg{after, fg(cSubtle)})
 }
 
 type previewOpts struct {
@@ -391,7 +392,7 @@ func (m Model) drawPreview(g *grid, r rect, o previewOpts) {
 	}
 	g.boxLabel(r, false, false, labelBg, seg{title, bold(titleFg)})
 	if p.err != nil {
-		g.put(in.x+1, in.y+1, "can't read this note", on(cLove, bg))
+		g.put(in.x+1, in.y+1, "can't read this note", on(cRed, bg))
 		g.put(in.x+1, in.y+2, truncate(p.err.Error(), in.w-2), on(cSubtle, bg))
 		return
 	}
@@ -414,7 +415,7 @@ func (m Model) drawPreview(g *grid, r rect, o previewOpts) {
 		}
 		valueFg := cText
 		if kv[0] == "tag" {
-			valueFg = cFoam
+			valueFg = cCyan
 		}
 		g.put(in.x+1, y, kv[0], on(cSubtle, bg))
 		g.put(in.x+10, y, truncate(kv[1], in.w-11), on(valueFg, bg))
@@ -484,9 +485,9 @@ func (m Model) drawWelcome(g *grid, r rect) {
 	}
 	root := tildify(m.store.Root)
 	steps := [][]seg{
-		{{"1  ", fg(cSubtle)}, {"Press ", fg(cText)}, {"n", bold(cGold)}, {" to create your first notebook (e.g. year-1).", fg(cText)}},
-		{{"2  ", fg(cSubtle)}, {"Press ", fg(cText)}, {"space t n", bold(cGold)}, {" to add a tag (a module, e.g. cs118).", fg(cText)}},
-		{{"3  ", fg(cSubtle)}, {"Press ", fg(cText)}, {"n", bold(cGold)}, {" again to write a note. It opens in " + editor + ".", fg(cText)}},
+		{{"1  ", fg(cSubtle)}, {"Press ", fg(cText)}, {"n", bold(cYellow)}, {" to create your first notebook (e.g. year-1).", fg(cText)}},
+		{{"2  ", fg(cSubtle)}, {"Press ", fg(cText)}, {"space t n", bold(cYellow)}, {" to add a tag (a module, e.g. cs118).", fg(cText)}},
+		{{"3  ", fg(cSubtle)}, {"Press ", fg(cText)}, {"n", bold(cYellow)}, {" again to write a note. It opens in " + editor + ".", fg(cText)}},
 	}
 	info := [][]seg{
 		{{"notes    ", fg(cSubtle)}, {root, fg(cText)}},
@@ -507,7 +508,7 @@ func (m Model) drawWelcome(g *grid, r rect) {
 	y := in.y + max(min((in.h-20)/2, 5), 0)
 	if in.h >= 20 {
 		for i, line := range wordmark {
-			g.putCenter(in.x, in.w, y+i, line, bold(cIris))
+			g.putCenter(in.x, in.w, y+i, line, bold(cBlue))
 		}
 		g.putCenter(in.x, in.w, y+len(wordmark)+1, "Typst lecture notes, one keystroke away.", fg(cSubtle))
 		y += len(wordmark) + 4
@@ -545,12 +546,12 @@ func (m Model) drawStatus(g *grid, y int) {
 	var right []part
 	if g.w >= sidebarMinWidth {
 		if m.repo.Changed > 0 {
-			right = append(right, part{fmt.Sprintf("+%d changed", m.repo.Changed), on(cGold, cSurface)})
+			right = append(right, part{fmt.Sprintf("+%d changed", m.repo.Changed), on(cYellow, cSurface)})
 		} else {
-			right = append(right, part{"● clean", on(cFoam, cSurface)})
+			right = append(right, part{"● clean", on(cCyan, cSurface)})
 		}
 		if m.repo.Ahead > 0 {
-			right = append(right, part{fmt.Sprintf("↑%d", m.repo.Ahead), on(cFoam, cSurface)})
+			right = append(right, part{fmt.Sprintf("↑%d", m.repo.Ahead), on(cCyan, cSurface)})
 		}
 		if m.repo.Branch != "" {
 			right = append(right, part{m.repo.Branch, on(cSubtle, cSurface)})
@@ -796,8 +797,8 @@ func (m Model) drawLeader(g *grid) {
 		return
 	}
 	r := rect{max(g.w-w-1, 0), bottom - h + 1, w, h}
-	g.box(r, cRose, cSurface)
-	g.boxLabel(r, false, false, cSurface, seg{title, bold(cRose)})
+	g.box(r, cMagenta, cSurface)
+	g.boxLabel(r, false, false, cSurface, seg{title, bold(cMagenta)})
 	in := r.inner()
 	for i, it := range items {
 		y := in.y + i
@@ -808,7 +809,7 @@ func (m Model) drawLeader(g *grid) {
 			rule(g, in.x+1, y, in.w-2, cSurface)
 			continue
 		}
-		g.putRight(in.x+4, y, it.key, onB(cGold, cSurface))
+		g.putRight(in.x+4, y, it.key, onB(cYellow, cSurface))
 		hintW := textWidth(it.hint)
 		g.put(in.x+6, y, truncate(it.label, in.w-8-hintW), on(cText, cSurface))
 		g.putRight(in.x+in.w-1, y, it.hint, on(cSubtle, cSurface))
@@ -856,10 +857,10 @@ func (m Model) drawPrompt(g *grid) {
 	if r.w == 0 {
 		return
 	}
-	g.box(r, cGold, cSurface)
-	g.boxLabel(r, false, false, cSurface, seg{title, bold(cGold)})
+	g.box(r, cYellow, cSurface)
+	g.boxLabel(r, false, false, cSurface, seg{title, bold(cYellow)})
 	in := r.inner()
-	drawInput(g, in.x+1, in.y, in.w-2, o.input, cGold, cSurface, placeholder)
+	drawInput(g, in.x+1, in.y, in.w-2, o.input, cYellow, cSurface, placeholder)
 	rule(g, in.x+1, in.y+1, in.w-2, cSurface)
 	for i, kv := range rows {
 		y := in.y + 2 + i
@@ -899,8 +900,8 @@ func (m Model) drawPicker(g *grid) {
 	if r.w == 0 {
 		return
 	}
-	g.box(r, cGold, cSurface)
-	g.boxLabel(r, false, false, cSurface, seg{title, bold(cGold)})
+	g.box(r, cYellow, cSurface)
+	g.boxLabel(r, false, false, cSurface, seg{title, bold(cYellow)})
 	if footer != "" {
 		g.boxLabel(r, true, false, cSurface, seg{truncate(footer, r.w-6), fg(cSubtle)})
 	}
@@ -908,7 +909,7 @@ func (m Model) drawPicker(g *grid) {
 
 	count := fmt.Sprintf("%d/%d", len(o.matches), len(o.items))
 	g.putRight(in.x+in.w-1, in.y, count, on(cSubtle, cSurface))
-	drawInput(g, in.x+1, in.y, in.w-3-textWidth(count), o.input, cGold, cSurface, placeholder)
+	drawInput(g, in.x+1, in.y, in.w-3-textWidth(count), o.input, cYellow, cSurface, placeholder)
 	rule(g, in.x+1, in.y+1, in.w-2, cSurface)
 
 	if len(o.matches) == 0 {
@@ -926,7 +927,7 @@ func (m Model) drawPicker(g *grid) {
 		if sel {
 			bg = cHLMed
 			g.fill(in.x, y, in.w, 1, bg)
-			g.put(in.x, y, "▎", on(cGold, bg))
+			g.put(in.x, y, "▎", on(cYellow, bg))
 		}
 		label := o.labels[mt.index]
 		dim := strings.LastIndex(label, "/") + 1
@@ -962,8 +963,8 @@ func (m Model) drawFinder(g *grid) {
 	listR := rect{1, top, listW, bottom - top + 1 - promptH}
 	promptR := rect{1, bottom - promptH + 1, listW, promptH}
 
-	g.box(listR, cFoam, cSurface)
-	g.boxLabel(listR, false, false, cSurface, seg{"Find", bold(cFoam)},
+	g.box(listR, cCyan, cSurface)
+	g.boxLabel(listR, false, false, cSurface, seg{"Find", bold(cCyan)},
 		seg{fmt.Sprintf("%d/%d", len(o.matches), len(o.candidates)), fg(cSubtle)})
 	in := listR.inner()
 	switch {
@@ -983,7 +984,7 @@ func (m Model) drawFinder(g *grid) {
 		if sel {
 			bg = cHLMed
 			g.fill(in.x, y, in.w, 1, bg)
-			g.put(in.x, y, "▎", on(cFoam, bg))
+			g.put(in.x, y, "▎", on(cCyan, bg))
 		}
 		room := in.w - 3
 		if showAge {
@@ -999,12 +1000,12 @@ func (m Model) drawFinder(g *grid) {
 		g.putMatch(in.x+2, y, truncate(o.labels[mt.index], room), mt, base, dim, cSubtle)
 	}
 
-	g.box(promptR, cFoam, cSurface)
+	g.box(promptR, cCyan, cSurface)
 	pin := promptR.inner()
-	drawInput(g, pin.x+1, pin.y, pin.w-2, o.input, cFoam, cSurface, "search every note")
+	drawInput(g, pin.x+1, pin.y, pin.w-2, o.input, cCyan, cSurface, "search every note")
 
 	if prevR.w > 0 {
-		m.drawPreview(g, prevR, previewOpts{bg: cSurface, border: cFoam, short: true})
+		m.drawPreview(g, prevR, previewOpts{bg: cSurface, border: cCyan, short: true})
 	}
 }
 
@@ -1053,8 +1054,8 @@ func (m Model) drawConfirm(g *grid) {
 	if r.w == 0 {
 		return
 	}
-	g.box(r, cLove, cSurface)
-	g.boxLabel(r, false, false, cSurface, seg{title, bold(cLove)})
+	g.box(r, cRed, cSurface)
+	g.boxLabel(r, false, false, cSurface, seg{title, bold(cRed)})
 	in := r.inner()
 	y, last := in.y+1, in.y+in.h
 	line := func(s string, st style) {
@@ -1078,7 +1079,7 @@ func (m Model) drawConfirm(g *grid) {
 	line("Committed notes can be restored from git.", fg(cSubtle))
 	y++
 	if y < last {
-		x := g.put(in.x+2, y, " y ", onB(cBase, cLove))
+		x := g.put(in.x+2, y, " y ", onB(cBase, cRed))
 		x = g.put(x+1, y, "delete", on(cText, cSurface)) + 3
 		x = g.put(x, y, " n ", onB(cText, cHLHigh))
 		g.put(x+1, y, "cancel", on(cSubtle, cSurface))
@@ -1121,14 +1122,14 @@ func (m Model) drawHelp(g *grid) {
 			}
 			room := colW - 2
 			if y < last {
-				g.put(x, y, truncate(gr.title, room), bold(cIris))
+				g.put(x, y, truncate(gr.title, room), bold(cBlue))
 			}
 			for j, b := range gr.rows {
 				ry := y + 1 + j
 				if ry >= last || b.label == "" {
 					continue
 				}
-				g.put(x, ry, truncate(b.label, 9), onB(cGold, cSurface))
+				g.put(x, ry, truncate(b.label, 9), onB(cYellow, cSurface))
 				g.put(x+10, ry, truncate(b.help, colW-11), on(cText, cSurface))
 			}
 		}

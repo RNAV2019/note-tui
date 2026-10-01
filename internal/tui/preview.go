@@ -132,13 +132,13 @@ func (h *highlighter) line(s string) []seg {
 		if strings.HasPrefix(trimmed, "=") {
 			rest := strings.TrimLeft(trimmed, "=")
 			if rest == "" || rest[0] == ' ' {
-				emit(s, bold(cLove))
+				emit(s, bold(cRed))
 				return out
 			}
 		}
 		if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "+ ") {
 			lead := len(s) - len(trimmed)
-			emit(s[:lead+1], fg(cRose))
+			emit(s[:lead+1], fg(cMagenta))
 			s = s[lead+1:]
 		}
 	}
@@ -173,22 +173,22 @@ func (h *highlighter) line(s string) []seg {
 				}
 				end++
 			}
-			emit(span(min(end+1, len(rs))), fg(cGold))
+			emit(span(min(end+1, len(rs))), fg(cYellow))
 
 		case r == '$':
 			end := indexFrom(rs, i+1, "$")
 			if end < 0 {
 				end = len(rs) - 1
 			}
-			emit(span(end+1), fg(cFoam))
+			emit(span(end+1), fg(cCyan))
 
 		case r == '#' && i+1 < len(rs) && (isIdentStart(rs[i+1]) || rs[i+1] == '(' || rs[i+1] == '{' || rs[i+1] == '['):
 			end := identEnd(rs, i+1)
 			word := string(rs[i+1 : end])
 			if typstKeywords[word] || word == "" {
-				emit(span(end), fg(cIris))
+				emit(span(end), fg(cBlue))
 			} else {
-				emit(span(end), fg(cRose))
+				emit(span(end), fg(cMagenta))
 			}
 			h.stmt = true // the rest of the line is code
 
@@ -201,11 +201,11 @@ func (h *highlighter) line(s string) []seg {
 			}
 			switch {
 			case typstKeywords[word]:
-				emit(span(end), fg(cIris))
+				emit(span(end), fg(cBlue))
 			case next < len(rs) && rs[next] == ':':
-				emit(span(end), fg(cFoam))
+				emit(span(end), fg(cCyan))
 			case next < len(rs) && rs[next] == '(':
-				emit(span(end), fg(cRose))
+				emit(span(end), fg(cMagenta))
 			default:
 				emit(span(end), fg(cText))
 			}
@@ -215,7 +215,7 @@ func (h *highlighter) line(s string) []seg {
 			for end < len(rs) && (unicode.IsDigit(rs[end]) || rs[end] == '.' || unicode.IsLetter(rs[end]) || rs[end] == '%') {
 				end++
 			}
-			emit(span(end), fg(cRose))
+			emit(span(end), fg(cMagenta))
 
 		case !h.inCode() && (r == '*' || r == '_') && i+1 < len(rs) && rs[i+1] != ' ':
 			end := indexFrom(rs, i+1, string(r))
@@ -226,7 +226,7 @@ func (h *highlighter) line(s string) []seg {
 			if r == '*' {
 				emit(span(end+1), bold(cText))
 			} else {
-				emit(span(end+1), fg(cRose))
+				emit(span(end+1), fg(cMagenta))
 			}
 
 		default:

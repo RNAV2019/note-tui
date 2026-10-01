@@ -1,7 +1,21 @@
 package tui
 
-// Rosé Pine. Every text colour here clears 4.5:1 on the backgrounds it is
-// used on; muted (3.4:1) is kept for borders and pine (3.4:1) isn't used at all.
+import (
+	"fmt"
+	imgcolor "image/color"
+	"strconv"
+
+	colorful "github.com/lucasb-eyer/go-colorful"
+)
+
+// Colours come from the terminal, not from a built-in scheme. Text and the
+// app background are the terminal's own defaults, so a transparent background
+// stays transparent, and accents are ANSI palette slots, so they follow
+// whatever scheme the terminal is set to. The neutrals in between are blended
+// from the terminal's background towards its foreground once it reports them;
+// on Rosé Pine's base and text the weights reproduce Rosé Pine's own ladder.
+// Secondary text is pushed towards the foreground until it clears 4.5:1 and
+// idle borders until they clear 3:1, if the scheme has the range for it.
 // Dimmed popup backdrops are deliberately below that bar: they are inert.
 
 type color uint8
@@ -17,31 +31,129 @@ const (
 	cMuted                // idle pane borders
 	cSubtle               // secondary text
 	cText                 // primary text
-	cLove                 // danger, errors, CONFIRM
-	cGold                 // keys, INPUT, uncommitted
-	cRose                 // leader, fuzzy matches, SPC
-	cFoam                 // tags, clean, FIND
-	cIris                 // focus, NOR
+	cRed                  // danger, errors, CONFIRM
+	cYellow               // keys, INPUT, uncommitted
+	cMagenta              // leader, fuzzy matches, SPC
+	cCyan                 // tags, clean, FIND
+	cBlue                 // focus, NOR
+	numColors
 )
 
-type rgb struct{ r, g, b uint8 }
+// ink is how a colour is named to the terminal. The zero ink is the
+// terminal's default foreground or background.
+type ink struct {
+	kind    inkKind
+	n       uint8 // palette slot, for inkANSI
+	r, g, b uint8 // for inkRGB
+}
 
-var palette = [...]rgb{
-	cNone:    {0x19, 0x17, 0x24},
-	cBase:    {0x19, 0x17, 0x24},
-	cSurface: {0x1f, 0x1d, 0x2e},
-	cOverlay: {0x26, 0x23, 0x3a},
-	cHLLow:   {0x21, 0x20, 0x2e},
-	cHLMed:   {0x40, 0x3d, 0x52},
-	cHLHigh:  {0x52, 0x4f, 0x67},
-	cMuted:   {0x6e, 0x6a, 0x86},
-	cSubtle:  {0x90, 0x8c, 0xaa},
-	cText:    {0xe0, 0xde, 0xf4},
-	cLove:    {0xeb, 0x6f, 0x92},
-	cGold:    {0xf6, 0xc1, 0x77},
-	cRose:    {0xeb, 0xbc, 0xba},
-	cFoam:    {0x9c, 0xcf, 0xd8},
-	cIris:    {0xc4, 0xa7, 0xe7},
+type inkKind uint8
+
+const (
+	inkDefault inkKind = iota
+	inkANSI
+	inkRGB
+)
+
+func slot(n uint8) ink { return ink{kind: inkANSI, n: n} }
+
+// code is the SGR parameter that paints k as a foreground or background.
+func (k ink) code(bg bool) string {
+	switch k.kind {
+	case inkANSI:
+		n := 30 + int(k.n)
+		if k.n >= 8 {
+			n = 90 + int(k.n) - 8
+		}
+		if bg {
+			n += 10
+		}
+		return strconv.Itoa(n)
+	case inkRGB:
+		lead := "38"
+		if bg {
+			lead = "48"
+		}
+		return fmt.Sprintf("%s;2;%d;%d;%d", lead, k.r, k.g, k.b)
+	default:
+		if bg {
+			return "49"
+		}
+		return "39"
+	}
+}
+
+// palette maps every colour to the ink that paints it.
+type palette [numColors]ink
+
+// fallbackPalette is used until the terminal reports its colours, and for
+// good if it never does. Without knowing the background, the only safe
+// neutral is bright black, so parked selections lean on their markers.
+var fallbackPalette = func() palette {
+	var p palette
+	for _, c := range []color{cOverlay, cHLMed, cHLHigh, cMuted, cSubtle} {
+		p[c] = slot(8)
+	}
+	p[cRed], p[cYellow], p[cBlue], p[cMagenta], p[cCyan] = slot(1), slot(3), slot(4), slot(5), slot(6)
+	return p
+}()
+
+// shades place each neutral between the background (0) and foreground (1) in
+// OKLab, so light and dark schemes get the same perceived steps. minContrast,
+// where set, is the ratio the shade must clear against base and surface.
+var shades = []struct {
+	c           color
+	mix         float64
+	minContrast float64
+}{
+	{cSurface, 0.040, 0},
+	{cOverlay, 0.083, 0},
+	{cHLLow, 0.054, 0},
+	{cHLMed, 0.228, 0},
+	{cHLHigh, 0.326, 0},
+	{cMuted, 0.467, 3},
+	{cSubtle, 0.633, 4.5},
+}
+
+// newPalette derives the neutrals from the terminal's background and
+// foreground. Text, background and accents stay as the terminal paints them.
+func newPalette(bg, fg imgcolor.Color) palette {
+	p := fallbackPalette
+	if bg == nil || fg == nil {
+		return p
+	}
+	b, ok := colorful.MakeColor(bg)
+	if !ok {
+		return p
+	}
+	f, ok := colorful.MakeColor(fg)
+	if !ok {
+		return p
+	}
+	blend := func(t float64) colorful.Color { return b.BlendOkLab(f, t).Clamped() }
+	surface := blend(shades[0].mix)
+	for _, s := range shades {
+		t := s.mix
+		c := blend(t)
+		for t < 1 && (contrast(c, b) < s.minContrast || contrast(c, surface) < s.minContrast) {
+			t = min(t+0.01, 1)
+			c = blend(t)
+		}
+		r, g, bl := c.RGB255()
+		p[s.c] = ink{kind: inkRGB, r: r, g: g, b: bl}
+	}
+	return p
+}
+
+// contrast is the WCAG contrast ratio between two colours.
+func contrast(a, b colorful.Color) float64 {
+	la, lb := luminance(a)+0.05, luminance(b)+0.05
+	return max(la, lb) / min(la, lb)
+}
+
+func luminance(c colorful.Color) float64 {
+	r, g, b := c.LinearRgb()
+	return 0.2126*r + 0.7152*g + 0.0722*b
 }
 
 func fg(c color) style     { return style{fg: c} }
@@ -66,7 +178,7 @@ func (m mode) label() string {
 }
 
 func (m mode) color() color {
-	return [...]color{cIris, cRose, cFoam, cGold, cLove, cSubtle}[m]
+	return [...]color{cBlue, cMagenta, cCyan, cYellow, cRed, cSubtle}[m]
 }
 
 // Git marks never rely on colour alone.
@@ -81,11 +193,11 @@ const (
 func (s gitState) mark() (string, color) {
 	switch s {
 	case gitDirty:
-		return "+", cGold
+		return "+", cYellow
 	case gitFailed:
-		return "✗", cLove
+		return "✗", cRed
 	default:
-		return "●", cFoam
+		return "●", cCyan
 	}
 }
 
@@ -101,10 +213,19 @@ const (
 func (l statusLevel) mark() (string, color) {
 	switch l {
 	case statusWarn:
-		return "!", cGold
+		return "!", cYellow
 	case statusErr:
-		return "✗", cLove
+		return "✗", cRed
 	default:
-		return "✓", cFoam
+		return "✓", cCyan
 	}
+}
+
+// cssColor is c as a CSS hex colour, or "" when the terminal never said.
+func cssColor(c imgcolor.Color) string {
+	if c == nil {
+		return ""
+	}
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
 }

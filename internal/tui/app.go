@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	imgcolor "image/color"
 	"io"
 	"sort"
 	"strings"
@@ -49,6 +50,11 @@ type Model struct {
 
 	prev preview
 
+	// termBg and termFg are the terminal's colours, once it reports them; pal
+	// is derived from both.
+	termBg, termFg imgcolor.Color
+	pal            palette
+
 	// pendingTag carries the tag chosen in the first step of the two-step
 	// "new note" flow through to the title prompt.
 	pendingTag string
@@ -56,7 +62,7 @@ type Model struct {
 
 // New builds the model and loads the note tree.
 func New(store *notes.Store, cfg config.Config, version string) (Model, error) {
-	m := Model{store: store, cfg: cfg, version: version, focus: paneNotes}
+	m := Model{store: store, cfg: cfg, version: version, focus: paneNotes, pal: fallbackPalette}
 	if err := m.reload(); err != nil {
 		return m, err
 	}
@@ -67,7 +73,10 @@ func New(store *notes.Store, cfg config.Config, version string) (Model, error) {
 	return m, nil
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+// Init asks the terminal for its colours, which the neutrals are blended from.
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(tea.RequestBackgroundColor, tea.RequestForegroundColor)
+}
 
 // ---------------------------------------------------------------- data
 
@@ -240,6 +249,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.l.hasSidebar() {
 			m.focus = paneNotes
 		}
+		return m, nil
+
+	case tea.BackgroundColorMsg:
+		m.termBg = msg.Color
+		m.pal = newPalette(m.termBg, m.termFg)
+		return m, nil
+
+	case tea.ForegroundColorMsg:
+		m.termFg = msg.Color
+		m.pal = newPalette(m.termBg, m.termFg)
 		return m, nil
 
 	case editorDoneMsg:
@@ -693,6 +712,7 @@ func (m Model) newEditSession(n notes.Note) *editSession {
 			Preview:        m.cfg.Preview,
 			PreviewURL:     m.cfg.PreviewURL,
 			PreviewProfile: m.cfg.PreviewProfile,
+			Backdrop:       cssColor(m.termBg),
 		},
 	}
 }

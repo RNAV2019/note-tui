@@ -99,7 +99,7 @@ The following programs must be on your `PATH`:
 - [`hx`](https://helix-editor.com/) — Helix editor
 - [`helium`](https://github.com/Alex-Shand/helium) — browser launcher used for the preview window
 
-A terminal with truecolor support and a font covering box-drawing characters (any Nerd Font will do).
+A terminal with truecolor support and a font covering box-drawing characters (any Nerd Font will do). The interface takes its colours from the terminal's own scheme: text and background are the terminal defaults, accents come from its ANSI palette, and the in-between shades are blended from the background and foreground it reports (OSC 10/11). Terminals that don't answer those queries get a plainer fallback.
 
 Alternatively, use the included Nix flake to get a reproducible environment:
 
@@ -128,16 +128,16 @@ There are only two invocations — everything else lives in the TUI.
 ```toml
 notes_dir       = "~/Documents/notes"
 editor          = "hx"
-preview         = "helium --app={url} --class=note-preview --user-data-dir={profile} --no-first-run --no-default-browser-check"
+preview         = "helium --app={url} --user-data-dir={profile} --no-first-run --no-default-browser-check --disable-extensions"
 preview_url     = "http://127.0.0.1:23635"
 preview_profile = "~/.cache/note/preview-profile"
 ```
 
 - **`notes_dir`** — root directory for all notebooks and notes.
 - **`editor`** — command used to open a note. Must accept a file path as its last argument.
-- **`preview`** — command used to open the live preview window. `{url}` is replaced with `preview_url` and `{profile}` with this session's profile directory.
+- **`preview`** — command used to open the live preview window. `{url}` is replaced with the page `note` serves in front of `preview_url` (see [How a note opens](#how-a-note-opens)) and `{profile}` with this session's profile directory.
 - **`preview_url`** — where tinymist serves the preview. **Must match `--data-plane-host` in your Helix config** (see below); tinymist serves the preview page from that same address.
-- **`preview_profile`** — where `note` keeps browser profiles. Each editing session gets a fresh profile underneath it, which is what lets `note` close the preview window when you quit the editor: a Chromium-based browser launched against a profile another instance already holds hands its window over and exits immediately, leaving a window nothing can close. Profiles left behind by a crashed session are reclaimed on the next start. If you point `preview` at a browser of your own, keep `{profile}` in the command.
+- **`preview_profile`** — where `note` keeps browser profiles. Each editing session gets a fresh profile underneath it, which is what lets `note` close the preview window when you quit the editor: a Chromium-based browser launched against a profile another instance already holds hands its window over and exits immediately, leaving a window nothing can close. Profiles left behind by a crashed session are reclaimed on the next start. If you point `preview` at a browser of your own, keep `{profile}` in the command, and keep `--disable-extensions` if your browser loads extensions on every launch: on a fresh profile they reinstall each time, and some (Bitwarden, for one) open a welcome window when they do.
 
 ## Template
 
@@ -184,10 +184,20 @@ Because the language server holds the buffer, the preview updates as you type �
 
 1. `note` launches Helix in the foreground.
 2. Helix starts tinymist, which starts the preview server on `preview_url`.
-3. `note` waits for that address to accept connections, then runs the `preview` command to open the window.
+3. `note` waits for that address to accept connections, then runs the `preview` command to open the window. The window opens a small proxy `note` runs in front of tinymist, at `http://127.0.0.1:<port>/note-preview`, which repaints tinymist's gray backdrop in your terminal's background colour. That backdrop is all you see for the second or two tinymist's page takes to boot, so it now loads as a blank pane in your own colours.
 4. Quitting Helix closes the preview window and returns you to the TUI.
 
 If the preview server never appears, `note` says so in the status line and you still get your editor — editing is never blocked by a broken preview.
+
+### Keeping focus in the terminal
+
+Chromium-based browsers name an `--app` window after its URL and ignore `--class`, so the preview window's class is `chrome-127.0.0.1__note-preview-Default`. To have it open without taking focus from the terminal, add a window rule. On Hyprland:
+
+```lua
+hl.window_rule({ match = { class = "chrome-127.0.0.1__note-preview-.*" }, no_initial_focus = true })
+```
+
+or, in hyprlang, `windowrule = noinitialfocus, class:^(chrome-127\.0\.0\.1__note-preview-.*)$`.
 
 ## Sync
 

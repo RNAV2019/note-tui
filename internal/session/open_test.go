@@ -375,8 +375,16 @@ func TestOpenLaunchesThePreviewWindowAfterTheEditorStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview window was never launched: %v", err)
 	}
-	if want := "--app=" + previewURL; string(got) != want {
-		t.Errorf("browser got %q, want %q", got, want)
+	// The window opens the restyling proxy, which must be gone with it.
+	pageURL, ok := strings.CutPrefix(string(got), "--app=")
+	if !ok || !strings.HasPrefix(pageURL, "http://127.0.0.1:") || !strings.HasSuffix(pageURL, pagePath) {
+		t.Errorf("browser got %q, want the proxied page", got)
+	}
+	if addr, err := hostPort(pageURL); err == nil {
+		if conn, err := net.Dial("tcp", addr); err == nil {
+			conn.Close()
+			t.Errorf("the preview proxy on %s outlived the session", addr)
+		}
 	}
 
 	// Open returned, so the browser it started must be gone.

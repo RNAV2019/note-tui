@@ -36,7 +36,7 @@ func (g *grid) putMatch(x, y int, s string, m match, base style, dimLen int, dim
 		st := base
 		switch {
 		case hit[i]:
-			st.fg, st.bold = cRose, true
+			st.fg, st.bold = cMagenta, true
 		case i < dimLen:
 			st.fg, st.bold = dimFg, false
 		}

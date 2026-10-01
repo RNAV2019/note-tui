@@ -60,30 +60,30 @@ func colourOf(t *testing.T, segs []seg, needle string) style {
 func TestHighlighter(t *testing.T) {
 	var h highlighter
 	line := h.line(`#set page(margin: 2cm, title: "x") // note`)
-	if st := colourOf(t, line, "#set"); st.fg != cIris {
+	if st := colourOf(t, line, "#set"); st.fg != cBlue {
 		t.Errorf("#set = %+v, want iris", st)
 	}
-	if st := colourOf(t, line, "margin"); st.fg != cFoam {
+	if st := colourOf(t, line, "margin"); st.fg != cCyan {
 		t.Errorf("named argument = %+v, want foam", st)
 	}
-	if st := colourOf(t, line, "2cm"); st.fg != cRose {
+	if st := colourOf(t, line, "2cm"); st.fg != cMagenta {
 		t.Errorf("length = %+v, want rose", st)
 	}
-	if st := colourOf(t, line, `"x"`); st.fg != cGold {
+	if st := colourOf(t, line, `"x"`); st.fg != cYellow {
 		t.Errorf("string = %+v, want gold", st)
 	}
 	if st := colourOf(t, line, "// note"); st.fg != cSubtle {
 		t.Errorf("comment = %+v, want subtle", st)
 	}
 
-	if st := colourOf(t, h.line("== Definition"), "Definition"); st.fg != cLove || !st.bold {
+	if st := colourOf(t, h.line("== Definition"), "Definition"); st.fg != cRed || !st.bold {
 		t.Errorf("heading = %+v, want bold love", st)
 	}
 	prose := h.line("A *B-tree* of order $m$ lets you search")
 	if st := colourOf(t, prose, "*B-tree*"); !st.bold {
 		t.Errorf("strong = %+v, want bold", st)
 	}
-	if st := colourOf(t, prose, "$m$"); st.fg != cFoam {
+	if st := colourOf(t, prose, "$m$"); st.fg != cCyan {
 		t.Errorf("math = %+v, want foam", st)
 	}
 	if st := colourOf(t, prose, "lets you"); st.fg != cText {
@@ -94,7 +94,7 @@ func TestHighlighter(t *testing.T) {
 func TestHighlighterTracksCodeBlocksAcrossLines(t *testing.T) {
 	var h highlighter
 	h.line("#let search(node, k) = {")
-	if st := colourOf(t, h.line("  let i = 0"), "let"); st.fg != cIris {
+	if st := colourOf(t, h.line("  let i = 0"), "let"); st.fg != cBlue {
 		t.Errorf("keyword inside a code block = %+v, want iris", st)
 	}
 	h.line("}")

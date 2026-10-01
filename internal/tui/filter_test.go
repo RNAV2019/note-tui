@@ -19,7 +19,7 @@ func TestFilterItems(t *testing.T) {
 func TestPutMatchHighlightsHits(t *testing.T) {
 	g := newGrid(10, 1)
 	g.putMatch(0, 0, "ab/cd", match{matched: []int{3}}, fg(cText), 3, cSubtle)
-	if c := g.at(3, 0); c.st.fg != cRose || !c.st.bold {
+	if c := g.at(3, 0); c.st.fg != cMagenta || !c.st.bold {
 		t.Errorf("hit = %+v, want bold rose", c.st)
 	}
 	if c := g.at(0, 0); c.st.fg != cSubtle {

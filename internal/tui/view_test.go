@@ -134,14 +134,14 @@ func TestOverlaysRender(t *testing.T) {
 }
 
 func TestDimmedOverlaysKeepTheirOwnColours(t *testing.T) {
-	m := sized(t, newTestModel(t), 120, 34)
+	m := withTerminalColours(t, sized(t, newTestModel(t), 120, 34), rosePineBase, rosePineText)
 	m = press(t, m, "?")
 	out := m.render().String()
 	// The help box paints on surface; the backdrop is dimmed to hlLow.
-	if !strings.Contains(out, "48;2;31;29;46") {
+	if !strings.Contains(out, m.pal[cSurface].code(true)) {
 		t.Error("the popup lost its surface background")
 	}
-	if !strings.Contains(out, "48;2;33;32;46") {
+	if !strings.Contains(out, m.pal[cHLLow].code(true)) {
 		t.Error("the backdrop was not dimmed")
 	}
 }

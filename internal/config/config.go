@@ -26,9 +26,13 @@ func defaults() Config {
 		// it a running browser adopts the window and this process exits.
 		// {profile} expands to a directory used by this session alone, so
 		// two open notes cannot adopt each other's window either.
-		// --class gives the window manager something specific to target.
-		Preview: "helium --app={url} --class=note-preview --user-data-dir={profile} " +
-			"--no-first-run --no-default-browser-check",
+		// There's no --class: app windows ignore it and are named after
+		// their URL instead (see session.pagePath).
+		// A fresh profile installs any extensions the browser loads on
+		// every launch, and some open a welcome window when installed;
+		// --disable-extensions keeps the preview to a single window.
+		Preview: "helium --app={url} --user-data-dir={profile} " +
+			"--no-first-run --no-default-browser-check --disable-extensions",
 		// Must match --data-plane-host in the editor's tinymist preview
 		// config; tinymist serves the preview page from that same address.
 		PreviewURL:     "http://127.0.0.1:23635",

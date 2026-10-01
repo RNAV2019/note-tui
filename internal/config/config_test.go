@@ -31,10 +31,11 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 }
 
 // The preview window is only closable because it runs in a profile of its
-// own, so the default command must actually ask for one.
+// own, so the default command must actually ask for one; and it is a single
+// app window only while extensions stay out of that fresh profile.
 func TestDefaultPreviewCommandOwnsItsBrowserInstance(t *testing.T) {
 	preview := defaults().Preview
-	for _, want := range []string{"{url}", "--user-data-dir={profile}", "--class="} {
+	for _, want := range []string{"--app={url}", "--user-data-dir={profile}", "--disable-extensions"} {
 		if !strings.Contains(preview, want) {
 			t.Errorf("default preview command %q is missing %q", preview, want)
 		}

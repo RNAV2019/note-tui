@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -26,11 +25,12 @@ type cell struct {
 
 type grid struct {
 	w, h  int
+	pal   palette
 	cells [][]cell
 }
 
 func newGrid(w, h int) *grid {
-	g := &grid{w: max(w, 0), h: max(h, 0)}
+	g := &grid{w: max(w, 0), h: max(h, 0), pal: fallbackPalette}
 	g.cells = make([][]cell, g.h)
 	for y := range g.cells {
 		g.cells[y] = make([]cell, g.w)
@@ -239,7 +239,7 @@ func (g *grid) String() string {
 				continue
 			}
 			if first || c.st != cur {
-				b.WriteString(sgr(c.st))
+				b.WriteString(g.pal.sgr(c.st))
 				cur, first = c.st, false
 			}
 			b.WriteRune(c.r)
@@ -265,9 +265,16 @@ func (g *grid) plain() string {
 	return b.String()
 }
 
-func sgr(st style) string {
-	fg, bg := palette[st.fg], palette[st.bg]
-	s := fmt.Sprintf("\x1b[0;38;2;%d;%d;%d;48;2;%d;%d;%d", fg.r, fg.g, fg.b, bg.r, bg.g, bg.b)
+func (p palette) sgr(st style) string {
+	fg, bg := p[st.fg].code(false), p[st.bg].code(true)
+	reverse := ""
+	if st.fg == cBase && st.bg != cBase {
+		// SGR can't name the default background as a foreground (or the
+		// default foreground as a background), so text cut out of a pill
+		// swaps the two instead.
+		fg, bg, reverse = p[st.bg].code(false), "49", ";7"
+	}
+	s := "\x1b[0;" + fg + ";" + bg + reverse
 	if st.bold {
 		s += ";1"
 	}

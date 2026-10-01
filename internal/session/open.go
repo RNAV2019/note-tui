@@ -47,6 +47,10 @@ type Options struct {
 	// profile and exit immediately, which would leave us with no process to
 	// close when the editor quits. See sessionProfile.
 	PreviewProfile string
+	// Backdrop is the CSS colour painted behind the preview's pages, and
+	// over the whole window while the page loads. Empty keeps tinymist's
+	// gray.
+	Backdrop string
 }
 
 // Open runs the full edit session for a note file.
@@ -72,11 +76,24 @@ func Open(file string, opts Options, tty IO, warn func(string)) error {
 			}
 			return
 		}
-		browser, err := startBrowser(opts.Preview, opts.PreviewURL, opts.PreviewProfile)
+		// The window opens the preview through a proxy that restyles it; if
+		// that can't start, the plain preview is still worth having.
+		pageURL := opts.PreviewURL
+		px, err := startProxy(opts.PreviewURL, opts.Backdrop)
+		if err == nil {
+			pageURL = px.url
+		}
+		browser, err := startBrowser(opts.Preview, pageURL, opts.PreviewProfile)
 		if err != nil {
+			px.close()
 			warn(err.Error())
 			return
 		}
+		if browser == nil {
+			px.close()
+			return
+		}
+		browser.proxy = px
 		browsers <- browser
 	}()
 
@@ -141,6 +158,7 @@ func hostPort(raw string) (string, error) {
 type preview struct {
 	cmd     *exec.Cmd
 	profile string // session-owned; removed once the window is gone
+	proxy   *proxy // what the window is pointed at; closed with it
 }
 
 // sessionProfile creates a fresh profile directory under base for one edit
@@ -231,6 +249,7 @@ func stopBrowser(p *preview) {
 		return
 	}
 	defer func() {
+		p.proxy.close()
 		if p.profile != "" {
 			os.RemoveAll(p.profile)
 		}
