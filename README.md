@@ -151,7 +151,7 @@ Supported placeholders:
 | `{{tag}}` | The tag (module folder) the note belongs to |
 | `{{date}}` | The creation date in `YYYY-MM-DD` format |
 
-The default template imports [cetz 0.4.2](https://typst.app/universe/package/cetz) and [fletcher 0.5.8](https://typst.app/universe/package/fletcher) so diagrams and graphs are available out of the box without any extra setup.
+The default template imports [typdraw 0.1.0](https://typst.app/universe/package/typdraw) so diagrams are available out of the box without any extra setup.
 
 ## Helix setup
 

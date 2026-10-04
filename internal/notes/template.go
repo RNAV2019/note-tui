@@ -6,9 +6,8 @@ import (
 )
 
 // DefaultTemplate is written to <notes>/.template.typ on bootstrap.
-// Package versions verified against typst 0.14.
-const DefaultTemplate = `#import "@preview/cetz:0.4.2"
-#import "@preview/fletcher:0.5.8" as fletcher: diagram, node, edge
+// Package version verified against typst 0.14.
+const DefaultTemplate = `#import "@local/typdraw:0.1.0": td
 
 #set page(margin: 2cm)
 #set text(size: 11pt)
