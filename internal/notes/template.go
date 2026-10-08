@@ -11,7 +11,6 @@ const DefaultTemplate = `#import "@local/typdraw:0.1.0": td
 
 #set page(margin: 2cm)
 #set text(size: 11pt)
-#set heading(numbering: "1.1")
 #show raw.where(block: true): block.with(
   fill: luma(245),
   inset: 8pt,
